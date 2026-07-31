@@ -235,17 +235,17 @@ config fragment survives `merge_config.sh` with all 18 load-bearing symbols
 intact and the FIQ debugger off, and `librknnmrt.so.2` links clean with the full
 RKNN API exported and no text relocations.
 
-On hardware, `scripts/flash.sh ram` gets a Pico Max through the DDR blob, the
-SPL and into U-Boot proper with the right 256 MB, so the maskrom path and the
-DRAM handoff are real. Whether the SPL can then read U-Boot proper off a flash
-device, and whether Linux comes up behind it, is still unverified.
+Verified on a board: both `scripts/flash.sh ram` and the boot chain in the
+NAND bring a Pico Max up in U-Boot proper with the right 256 MB of DRAM, the
+SPL reads U-Boot out of the SPI NAND, the environment loads, and standard boot
+finds the `extlinux` bootflow on the card. Linux itself is still unverified.
 
-The first attempt at that could not: nothing in `rv1106.dtsi` is marked
-`bootph-*`, so fdtgrep handed the SPL a devicetree with no CRU in it and both
-storage drivers failed with `-22` on a clock they could not resolve. The
-`-u-boot.dtsi` here names the CRU, the GRF, the pinctrl node and the pin groups
-the SPL uses, which is what `rk356x-u-boot.dtsi` does and what the upstream
-Pico Mini B (RV1103, 64 MB, SPI NAND only) is missing.
+Getting there took the SPL devicetree seriously: nothing in `rv1106.dtsi` is
+marked `bootph-*`, so fdtgrep was handing the SPL a devicetree with no CRU in
+it and both storage drivers failed with `-22` on a clock they could not
+resolve. The `-u-boot.dtsi` here names the CRU, the GRF, the pinctrl node and
+the pin groups the SPL uses, which is what `rk356x-u-boot.dtsi` does and what
+the upstream Pico Mini B (RV1103, 64 MB, SPI NAND only) is missing.
 
 ## Credits
 

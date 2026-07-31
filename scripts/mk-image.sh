@@ -53,6 +53,17 @@ extlinux="$rootdir/boot/extlinux"
 sed "s|@@ROOT@@|PARTUUID=$rootuuid|" \
 	"$extlinux/extlinux.conf.in" > "$extlinux/extlinux.conf"
 
+# U-Boot resolves these paths from the root of the partition, which is this
+# rootfs, and a path that does not resolve costs a flash cycle to discover:
+# the bootflow is found and parsed, then dropped with "Skipping <label> for
+# failure retrieving kernel". Resolve them here instead.
+while read -r key path; do
+	[ -f "$rootdir/${path#/}" ] \
+		|| die "extlinux.conf: $key $path is not in the rootfs"
+done < <(awk '$1 ~ /^(kernel|linux|fdt|initrd)$/ && $2 ~ /^\// {print $1, $2}' \
+	"$extlinux/extlinux.conf")
+echo "  ok   extlinux.conf paths resolve inside the rootfs"
+
 log "creating ext4 root"
 rootimg="$OUT/rootfs.ext4"
 rm -f "$rootimg"
