@@ -1,0 +1,14 @@
+[Unit]
+Description=Grow the root filesystem to fill its partition
+DefaultDependencies=no
+After=systemd-remount-fs.service
+Before=sysinit.target
+ConditionPathExists=!/var/lib/luckfox/growroot-done
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/luckfox-growroot
+
+[Install]
+WantedBy=sysinit.target

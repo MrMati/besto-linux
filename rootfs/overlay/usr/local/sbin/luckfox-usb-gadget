@@ -1,0 +1,78 @@
+#!/bin/sh
+# Present the Type-C port as a USB NCM network adapter plus an ACM serial port.
+#
+# Plug the board into a laptop and you get a usb0 interface on both ends and a
+# /dev/ttyACM* console, with no UART adapter and no Ethernet cable. The board
+# takes 172.32.0.93/24, matching what the stock Luckfox image uses so existing
+# notes and scripts keep working.
+set -eu
+
+G=/sys/kernel/config/usb_gadget/luckfox
+IFACE_ADDR=${USB_GADGET_ADDR:-172.32.0.93/24}
+# Locally administered MACs, stable across reboots so the host does not invent
+# a new interface name every time.
+MAC_DEV=${USB_GADGET_MAC_DEV:-2a:66:6c:66:78:01}
+MAC_HOST=${USB_GADGET_MAC_HOST:-2a:66:6c:66:78:02}
+
+udc_name() { ls /sys/class/udc 2>/dev/null | head -1; }
+
+up() {
+	udc=$(udc_name)
+	[ -n "$udc" ] || { echo "no UDC available; is the controller in peripheral mode?" >&2; exit 0; }
+	[ -d "$G" ] && exit 0
+
+	modprobe libcomposite 2>/dev/null || true
+	mountpoint -q /sys/kernel/config || mount -t configfs none /sys/kernel/config
+
+	mkdir -p "$G"
+	echo 0x1d6b > "$G/idVendor"       # Linux Foundation
+	echo 0x0104 > "$G/idProduct"      # Multifunction composite gadget
+	echo 0x0200 > "$G/bcdUSB"
+	echo 0x0100 > "$G/bcdDevice"
+
+	mkdir -p "$G/strings/0x409"
+	echo "Luckfox"      > "$G/strings/0x409/manufacturer"
+	echo "Pico Max"     > "$G/strings/0x409/product"
+	echo "$(cat /proc/sys/kernel/random/boot_id | tr -d - | cut -c1-16)" \
+	                    > "$G/strings/0x409/serialnumber"
+
+	mkdir -p "$G/functions/ncm.usb0"
+	echo "$MAC_DEV"  > "$G/functions/ncm.usb0/dev_addr"
+	echo "$MAC_HOST" > "$G/functions/ncm.usb0/host_addr"
+	mkdir -p "$G/functions/acm.gs0"
+
+	mkdir -p "$G/configs/c.1/strings/0x409"
+	echo "NCM + ACM" > "$G/configs/c.1/strings/0x409/configuration"
+	echo 250         > "$G/configs/c.1/MaxPower"
+	ln -sf "$G/functions/ncm.usb0" "$G/configs/c.1/"
+	ln -sf "$G/functions/acm.gs0"  "$G/configs/c.1/"
+
+	echo "$udc" > "$G/UDC"
+
+	# Give the interface a moment to appear, then address it. systemd-networkd
+	# is not involved: this link is a debug aid and should work even if the
+	# network config on the board is broken.
+	for _ in 1 2 3 4 5 6 7 8 9 10; do
+		[ -d /sys/class/net/usb0 ] && break
+		sleep 0.2
+	done
+	if [ -d /sys/class/net/usb0 ]; then
+		ip addr replace "$IFACE_ADDR" dev usb0
+		ip link set usb0 up
+	fi
+}
+
+down() {
+	[ -d "$G" ] || exit 0
+	echo "" > "$G/UDC" 2>/dev/null || true
+	rm -f "$G"/configs/c.1/ncm.usb0 "$G"/configs/c.1/acm.gs0
+	rmdir "$G"/configs/c.1/strings/0x409 "$G"/configs/c.1 2>/dev/null || true
+	rmdir "$G"/functions/ncm.usb0 "$G"/functions/acm.gs0 2>/dev/null || true
+	rmdir "$G"/strings/0x409 "$G" 2>/dev/null || true
+}
+
+case "${1:-up}" in
+up)   up ;;
+down) down ;;
+*)    echo "usage: $0 {up|down}" >&2; exit 1 ;;
+esac

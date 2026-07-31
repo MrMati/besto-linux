@@ -1,0 +1,12 @@
+# The RV1106 GMAC with its integrated PHY shows up as end0 under the predictable
+# naming scheme. Match both spellings so this keeps working if udev's policy or
+# the DTS alias changes.
+[Match]
+Name=end0 eth0
+
+[Network]
+DHCP=yes
+IPv6AcceptRA=yes
+
+[DHCPv4]
+RouteMetric=100

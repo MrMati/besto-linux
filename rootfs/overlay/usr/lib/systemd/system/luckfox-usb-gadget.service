@@ -1,0 +1,13 @@
+[Unit]
+Description=USB gadget (NCM network + ACM serial) on the Type-C port
+After=systemd-modules-load.service
+ConditionPathIsDirectory=/sys/kernel/config
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/luckfox-usb-gadget up
+ExecStop=/usr/local/sbin/luckfox-usb-gadget down
+
+[Install]
+WantedBy=multi-user.target

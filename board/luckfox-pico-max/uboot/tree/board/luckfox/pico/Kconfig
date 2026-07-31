@@ -1,0 +1,21 @@
+if TARGET_LUCKFOX_PICO_RV1103 || TARGET_LUCKFOX_PICO_RV1106
+
+config SYS_BOARD
+	default "pico"
+
+config SYS_VENDOR
+	default "luckfox"
+
+config SYS_CONFIG_NAME
+	default "luckfox_pico"
+
+config LUCKFOX_PICO_DRAM_SIZE_MB
+	int "Size of the in-package DRAM, in MB"
+	default 64
+	help
+	  The RV1103/RV1106 DRAM is initialised by the closed-source TPL from
+	  rkbin before U-Boot runs and its size is not discoverable from any
+	  register U-Boot can rely on, so each board states it here. The Pico
+	  Mini has 64MB, the Pico Pro 128MB and the Pico Max 256MB.
+
+endif

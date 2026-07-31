@@ -1,0 +1,4 @@
+# <file system>  <mount point>  <type>  <options>                    <dump> <pass>
+/dev/root        /              auto    defaults,noatime                 0      1
+tmpfs            /tmp           tmpfs   defaults,nosuid,nodev,size=64M   0      0
+tmpfs            /var/tmp       tmpfs   defaults,nosuid,nodev,size=32M   0      0

@@ -1,0 +1,175 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Luckfox Pico Max -- RV1106G3, 256MB DDR3L, 256MB SPI NAND.
+ *
+ * Deliberately lean: this describes the board as a general purpose Linux
+ * machine with an NPU, not as an IP camera. The camera/ISP/encoder half of the
+ * SoC is left disabled, which is what rv1106.dtsi already does -- we simply do
+ * not include rv1106-evb.dtsi or rv1106-ipc.dtsi, both of which turn it all on
+ * and pull in a fixed set of sensors.
+ *
+ * Built against the Rockchip 6.6 vendor kernel (develop-6.6), which is the
+ * newest tree with both RV1106 SoC support and the RKNPU driver.
+ */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include "rv1106.dtsi"
+
+/ {
+	model = "Luckfox Pico Max";
+	compatible = "luckfox,pico-max", "rockchip,rv1106g3", "rockchip,rv1106";
+
+	chosen {
+		/*
+		 * U-Boot replaces this wholesale via extlinux.conf or the
+		 * ubi_bootargs env var; it is only a sane default for the case
+		 * where the DTB is booted by hand.
+		 */
+		bootargs = "console=ttyS2,115200n8 rootwait";
+	};
+
+	vcc_1v8: regulator-vcc-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vcc_3v3: regulator-vcc-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	/*
+	 * VDD_ARM is a PWM-controlled buck on PWM0. Without this the CPU is
+	 * stuck at whatever voltage the bootloader left behind, cpufreq cannot
+	 * scale past the boot OPP and the part runs hot at load. This is the
+	 * single most important node on the board.
+	 */
+	vdd_arm: regulator-vdd-arm {
+		compatible = "pwm-regulator";
+		pwms = <&pwm0 0 5000 1>;
+		regulator-name = "vdd_arm";
+		regulator-min-microvolt = <724000>;
+		regulator-max-microvolt = <1078000>;
+		regulator-init-microvolt = <950000>;
+		regulator-settling-time-up-us = <250>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		work_led: led-0 {
+			gpios = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+			default-state = "on";
+			function = "activity";
+		};
+	};
+};
+
+/* ------------------------------------------------------------------ CPU --- */
+
+&cpu0 {
+	cpu-supply = <&vdd_arm>;
+};
+
+&pwm0 {
+	status = "okay";
+};
+
+/* ------------------------------------------------------------------ NPU --- */
+
+&npu {
+	status = "okay";
+};
+
+/* ---------------------------------------------------------------- flash --- */
+
+&sfc {
+	status = "okay";
+
+	flash@0 {
+		compatible = "spi-nand";
+		reg = <0>;
+		spi-max-frequency = <75000000>;
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <1>;
+	};
+};
+
+&sdmmc {
+	bus-width = <4>;
+	cap-mmc-highspeed;
+	cap-sd-highspeed;
+	disable-wp;
+	no-mmc;
+	no-sdio;
+	max-frequency = <50000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_det &sdmmc0_bus4>;
+	status = "okay";
+};
+
+/* ------------------------------------------------------------- ethernet --- */
+
+/* 100M, integrated PHY. MAC address comes from the OTP via nvmem. */
+&gmac {
+	status = "okay";
+};
+
+/* ------------------------------------------------------------------ USB --- */
+
+&u2phy {
+	status = "okay";
+};
+
+&u2phy_otg {
+	rockchip,dis-u2-susphy;
+	status = "okay";
+};
+
+&usbdrd {
+	status = "okay";
+};
+
+&usbdrd_dwc3 {
+	dr_mode = "otg";
+	status = "okay";
+};
+
+/* --------------------------------------------------------------- sensors --- */
+
+&saradc {
+	vref-supply = <&vcc_1v8>;
+	status = "okay";
+};
+
+&tsadc {
+	status = "okay";
+};
+
+/* -------------------------------------------------------------- console --- */
+
+&uart2 {
+	status = "okay";
+};
+
+&wdt {
+	status = "okay";
+};
+
+&rtc {
+	status = "okay";
+};

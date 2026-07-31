@@ -1,0 +1,20 @@
+// SPDX-License-Identifier: GPL-2.0+
+
+#include "rockchip-u-boot.dtsi"
+
+/ {
+	chosen {
+		/*
+		 * The BootROM only ever runs the idblock it found itself, so
+		 * this list just tells the SPL where to look for U-Boot proper.
+		 * NAND first (that is where the boot chain lives on a stock
+		 * board), microSD second so a blank-flash board still comes up.
+		 */
+		u-boot,spl-boot-order = &spi_nand, &sdmmc;
+	};
+};
+
+&sdmmc {
+	bootph-pre-ram;
+	bootph-some-ram;
+};

@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+#
+# Write images to the board.
+#
+#   flash.sh sd /dev/sdX     write the microSD image to a card
+#   flash.sh nand            write the boot chain (and optionally the UBI
+#                            rootfs) into the on-board SPI NAND over USB
+#   flash.sh ram             run U-Boot from RAM over USB, touching no flash
+#
+# For the USB modes, put the board in maskrom mode first: hold BOOT while
+# applying power, or leave the flash blank. It enumerates as 2207:110c.
+
+. "$(dirname "$0")/lib.sh"
+
+mode="${1:-}"; shift || true
+
+case "$mode" in
+sd)
+	dev="${1:-}"
+	[ -b "$dev" ] || die "usage: flash.sh sd /dev/sdX   (must be a block device)"
+	img="$OUT/$BOARD-sdcard.img"
+	[ -f "$img" ] || die "no $img (make images)"
+
+	# Refuse to write to something that is mounted or looks like a system disk.
+	if lsblk -no MOUNTPOINT "$dev" | grep -q .; then
+		die "$dev has mounted partitions; unmount them first"
+	fi
+	size_gb=$(( $(blockdev --getsize64 "$dev") / 1000000000 ))
+	echo "About to overwrite $dev ($(lsblk -dno MODEL,SIZE "$dev" | xargs), ${size_gb}GB)"
+	printf 'Type the device name again to confirm: '
+	read -r confirm
+	[ "$confirm" = "$dev" ] || die "aborted"
+
+	log "writing $(basename "$img") to $dev"
+	dd if="$img" of="$dev" bs=4M conv=fsync status=progress
+	sync
+	log "done. The BootROM prefers the SPI NAND: if the board has a bootable"
+	log "image in NAND it will ignore the card. Use 'flash.sh nand' to put this"
+	log "U-Boot in NAND, or erase the NAND, to boot from the card."
+	;;
+
+nand)
+	need rkdeveloptool
+	rkbin="$SRC/rkbin"
+	loader="$OUT/rv1106_download.bin"
+	[ -f "$loader" ] || die "no $loader (make uboot)"
+
+	log "waiting for a maskrom device"
+	rkdeveloptool ld | grep -qi maskrom || die "no board in maskrom mode (hold BOOT while powering on)"
+
+	log "uploading the download loader"
+	rkdeveloptool db "$loader"
+	sleep 1
+
+	# Offsets in 512-byte sectors, matching the partition map in board.env.
+	log "writing idbloader.img @ $NAND_IDB_OFFSET"
+	rkdeveloptool wl $(( NAND_IDB_OFFSET / 512 )) "$OUT/idbloader.img"
+	log "writing u-boot.img @ $NAND_UBOOT_OFFSET"
+	rkdeveloptool wl $(( NAND_UBOOT_OFFSET / 512 )) "$OUT/u-boot.img"
+
+	ubi="$OUT/$BOARD-rootfs.ubi"
+	if [ -f "$ubi" ] && [ "${1:-}" = "--with-rootfs" ]; then
+		log "writing the UBI rootfs @ $NAND_UBI_OFFSET (this takes a while)"
+		rkdeveloptool wl $(( NAND_UBI_OFFSET / 512 )) "$ubi"
+	fi
+
+	rkdeveloptool rd
+	log "done; power cycle the board. Console is UART2 at 115200 8N1."
+	;;
+
+ram)
+	need rockusb
+	for f in u-boot-rockchip-usb471.bin u-boot-rockchip-usb472.bin; do
+		[ -f "$OUT/$f" ] || die "no $OUT/$f (make uboot)"
+	done
+	log "booting U-Boot from RAM; nothing is written to the flash"
+	rockusb download-boot "$OUT/u-boot-rockchip-usb471.bin" "$OUT/u-boot-rockchip-usb472.bin"
+	;;
+
+*)
+	sed -n '2,14p' "$0" | sed 's|^# \{0,1\}||'
+	exit 1
+	;;
+esac

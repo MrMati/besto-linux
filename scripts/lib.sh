@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+# Shared setup for every build stage. Sourced, never executed.
+
+set -euo pipefail
+
+TOP="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+BOARD="${BOARD:-luckfox-pico-max}"
+BOARD_DIR="$TOP/board/$BOARD"
+
+[ -f "$BOARD_DIR/board.env" ] || { echo "unknown board '$BOARD'" >&2; exit 1; }
+# shellcheck disable=SC1090
+. "$BOARD_DIR/board.env"
+
+SRC="${SRC:-$TOP/src}"
+OUT="${OUT:-$TOP/out}"
+DL="${DL:-$TOP/dl}"
+mkdir -p "$SRC" "$OUT" "$DL"
+
+# ---------------------------------------------------------------- sources ---
+#
+# Every upstream is pinned to an exact commit. Refresh them deliberately with
+# `make bump`, never implicitly.
+
+# Mainline U-Boot plus the in-flight RV1103B/RV1103/RV1106 series
+# (https://concept.u-boot.org/u-boot/u-boot/-/merge_requests/1147). RV1106 is
+# not in u-boot master yet; when the series lands, repoint UBOOT_URL at
+# https://github.com/u-boot/u-boot.git and drop UBOOT_REF to a release tag.
+UBOOT_URL="${UBOOT_URL:-https://concept.u-boot.org/u-boot/u-boot.git}"
+UBOOT_REF="${UBOOT_REF:-10c626b398b073f49294f7f4045d5b16892cb8b8}"
+
+# Rockchip's 6.6 vendor kernel. This is the newest tree that has both RV1106
+# SoC support and drivers/rknpu with a rockchip,rv1106-rknpu match. Mainline
+# Linux has no RV1106 support at all; the 5.10 tree in the Luckfox SDK does,
+# but it is four LTS releases behind and predates most of what a modern glibc
+# userspace assumes.
+KERNEL_URL="${KERNEL_URL:-https://github.com/rockchip-linux/kernel.git}"
+KERNEL_BRANCH="${KERNEL_BRANCH:-develop-6.6}"
+KERNEL_REF="${KERNEL_REF:-1ba51b059f25533c5529b7f68186190b47d6a7b3}"
+
+# Closed-source DDR init blob. Nothing boots without it.
+RKBIN_URL="${RKBIN_URL:-https://github.com/rockchip-linux/rkbin.git}"
+RKBIN_REF="${RKBIN_REF:-ecb4fcbe954edf38b3ae037d5de6d9f5bccf81f4}"
+
+# RKNPU2 userspace runtime and headers.
+RKNPU2_URL="${RKNPU2_URL:-https://github.com/airockchip/rknn-toolkit2.git}"
+RKNPU2_REF="${RKNPU2_REF:-v2.3.2}"
+
+CROSS_COMPILE="${CROSS_COMPILE:-arm-linux-gnueabihf-}"
+JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+
+# ---------------------------------------------------------------- helpers ---
+
+log()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
+die()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
+
+need() {
+	local missing=()
+	for t in "$@"; do command -v "$t" >/dev/null 2>&1 || missing+=("$t"); done
+	[ ${#missing[@]} -eq 0 ] || die "missing host tools: ${missing[*]} (run scripts/install-deps.sh)"
+}
+
+# fetch <name> <url> <ref> [branch]
+#
+# Clones once into $SRC/<name> and afterwards only fetches the pinned ref. Keeps
+# the tree at exactly <ref> with any local build droppings removed, so repeated
+# builds are reproducible without re-downloading a gigabyte of history.
+fetch() {
+	local name="$1" url="$2" ref="$3" branch="${4:-}" dir="$SRC/$1"
+
+	if [ ! -d "$dir/.git" ]; then
+		log "cloning $name"
+		git init -q "$dir"
+		git -C "$dir" remote add origin "$url"
+	else
+		git -C "$dir" remote set-url origin "$url"
+	fi
+
+	if ! git -C "$dir" cat-file -e "$ref^{commit}" 2>/dev/null; then
+		log "fetching $name @ $ref"
+		# Try the cheap path first; fall back to the branch, then to
+		# everything, since not all servers allow fetching a bare SHA.
+		git -C "$dir" fetch --depth 1 origin "$ref" 2>/dev/null \
+			|| { [ -n "$branch" ] && git -C "$dir" fetch --depth 200 origin "$branch"; } \
+			|| git -C "$dir" fetch --tags origin
+	fi
+
+	git -C "$dir" -c advice.detachedHead=false checkout -q --force "$ref"
+	git -C "$dir" clean -qfdx
+	echo "$dir"
+}
+
+# apply_overlay <src-tree-dir> <dest-dir>
+#
+# Copies a directory tree over a source checkout. Used instead of patch files
+# because every file we add is a whole new file; the two places we have to edit
+# an existing file are handled explicitly by the caller.
+apply_overlay() {
+	local from="$1" to="$2"
+	[ -d "$from" ] || return 0
+	log "overlaying $(basename "$from") onto $(basename "$to")"
+	tar -C "$from" -cf - . | tar -C "$to" -xf -
+}
+
+hostarch_deb() { dpkg --print-architecture 2>/dev/null || echo unknown; }

@@ -1,0 +1,5 @@
+// A board this size should not keep a package cache or docs it will never read.
+APT::Install-Recommends "0";
+APT::Install-Suggests "0";
+Acquire::Languages "none";
+Binary::apt::APT::Keep-Downloaded-Packages "false";

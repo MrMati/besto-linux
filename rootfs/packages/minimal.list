@@ -1,0 +1,21 @@
+# The smallest thing that is still a real Debian system: boots to systemd,
+# brings up the network, lets you in over SSH, and can install anything else
+# with apt.
+systemd-sysv
+systemd-timesyncd
+systemd-resolved
+udev
+dbus
+libpam-systemd
+netbase
+iproute2
+iputils-ping
+openssh-server
+ca-certificates
+sudo
+less
+nano
+zstd
+kmod
+e2fsprogs
+mtd-utils

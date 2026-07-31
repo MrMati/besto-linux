@@ -1,0 +1,32 @@
+#!/bin/sh
+# The SD image is built just big enough to hold the rootfs so it writes fast.
+# On first boot, expand the partition and the filesystem to fill the card.
+set -eu
+
+mkdir -p /var/lib/luckfox
+done_marker=/var/lib/luckfox/growroot-done
+
+root_src=$(findmnt -no SOURCE / || true)
+case "$root_src" in
+/dev/mmcblk*p*)
+	disk=$(echo "$root_src" | sed 's/p[0-9]*$//')
+	part=$(echo "$root_src" | sed 's|.*p||')
+	;;
+*)
+	# UBI, NFS, initramfs: nothing to grow.
+	touch "$done_marker"
+	exit 0
+	;;
+esac
+
+echo "growing $root_src (partition $part of $disk)"
+if command -v growpart >/dev/null 2>&1; then
+	growpart "$disk" "$part" || true
+else
+	# sfdisk can move the end of the last partition in place.
+	echo ", +" | sfdisk --no-reread --force -N "$part" "$disk" || true
+	partx -u "$disk" 2>/dev/null || true
+fi
+resize2fs "$root_src" || true
+
+touch "$done_marker"
