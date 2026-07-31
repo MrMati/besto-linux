@@ -155,6 +155,26 @@ else
 	echo '  ok   DRM stays off, RKNPU keeps the dma-heap backend'
 fi
 
+log "rootfs overlay"
+# /usr/lib/tmpfiles.d/debian.conf carries "L+ /etc/default/locale - - - -
+# ../locale.conf", and L+ deletes whatever is in the way. A real file there
+# survives until systemd-tmpfiles-setup.service runs and no longer, so the
+# locale has to be written to /etc/locale.conf. build-rootfs.sh holds this
+# against the tmpfiles.d of the rootfs it just built; this is the same claim
+# without a build, because finding out an hour in is not the same as finding
+# out now.
+ovl="$TOP/rootfs/overlay"
+if [ "$(readlink "$ovl/etc/default/locale")" = "../locale.conf" ]; then
+	echo '  ok   /etc/default/locale is the symlink tmpfiles.d insists on'
+else
+	echo '  FAIL /etc/default/locale must be a symlink to ../locale.conf, or tmpfiles will delete it'; fail=1
+fi
+if grep -q '^LANG=' "$ovl/etc/locale.conf" 2>/dev/null; then
+	echo '  ok   /etc/locale.conf sets LANG'
+else
+	echo '  FAIL /etc/locale.conf does not set LANG; pam_env will log on every login'; fail=1
+fi
+
 log "npu glibc shim"
 if command -v "${CROSS_COMPILE}gcc" >/dev/null 2>&1; then
 	tmp="$(mktemp -d)"
