@@ -4,7 +4,7 @@ set -euo pipefail
 
 pkgs=(
 	# toolchain and kbuild
-	gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
+	gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
 	build-essential bc bison flex libssl-dev libgnutls28-dev
 	device-tree-compiler python3 python3-dev python3-setuptools
 	python3-pyelftools swig libpython3-dev
