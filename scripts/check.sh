@@ -36,16 +36,32 @@ if [ "$dram" != "$DRAM_SIZE_MB" ]; then
 else
 	echo "  ok   DRAM size agrees between board.env and the defconfig"
 fi
+# Where mk-image.sh puts u-boot.img on the card and where the SPL reads it from
+# are two independent numbers, and the Rockchip default for the second one
+# (0x4000, 8 MiB) is where our root partition starts.
+sector="$(sed -n 's/^CONFIG_SYS_MMCSD_RAW_MODE_U_BOOT_SECTOR=//p' "$ubt/configs/$UBOOT_DEFCONFIG")"
+if [ "$(( sector / 2 ))" != "$SD_UBOOT_OFFSET_KIB" ] 2>/dev/null; then
+	echo "  FAIL SPL reads u-boot from sector $sector ($(( sector / 2 )) KiB), the image writes it at ${SD_UBOOT_OFFSET_KIB} KiB"; fail=1
+else
+	echo "  ok   the SD u-boot offset agrees between board.env and the defconfig"
+fi
 
 log "kernel devicetree"
 check test -f "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts"
 # The whole point of the board is the NPU; a DTS that forgets to enable it
 # builds and boots and silently has no /dev/rknpu.
-if grep -qE '^&npu \{' "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts" && \
-   grep -A2 '^&npu {' "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts" | grep -q 'status = "okay"'; then
+npu_node="$(sed -n '/^&npu {/,/^};/p' "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts")"
+if printf '%s' "$npu_node" | grep -q 'status = "okay"'; then
 	echo '  ok   &npu is enabled'
 else
 	echo '  FAIL &npu is not enabled in the devicetree'; fail=1
+fi
+# rv1106.dtsi leaves aclk_rknn on the 420 MHz PVTPLL. 500 MHz is the rated
+# clock and the only faster parent the ACLK_NPU_ROOT mux has.
+if printf '%s' "$npu_node" | grep -q 'assigned-clock-rates = <500000000>'; then
+	echo '  ok   the NPU is clocked at 500 MHz'
+else
+	echo '  FAIL &npu does not pin aclk_rknn to 500 MHz'; fail=1
 fi
 
 log "kernel config fragment"

@@ -92,6 +92,15 @@
 /* ------------------------------------------------------------------ NPU --- */
 
 &npu {
+	/*
+	 * rv1106.dtsi parks the NPU on the 420 MHz NPU PVTPLL. ACLK_NPU_ROOT is
+	 * a four-way mux with no divider behind it -- clk_500m_src, clk_300m_src,
+	 * pvtpll0 (410 MHz) and pvtpll1 (420 MHz) -- so the only rate above the
+	 * default is clk_500m_src, and 500 MHz is what the part is rated for.
+	 * Asking for anything else silently lands on one of the other three.
+	 */
+	assigned-clocks = <&cru ACLK_RKNN>;
+	assigned-clock-rates = <500000000>;
 	status = "okay";
 };
 

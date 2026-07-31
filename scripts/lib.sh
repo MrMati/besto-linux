@@ -21,9 +21,18 @@ mkdir -p "$SRC" "$OUT" "$DL"
 # Every upstream is pinned to an exact commit. Refresh them deliberately with
 # `make bump`, never implicitly.
 
-# Mainline U-Boot plus the in-flight RV1103B/RV1103/RV1106 series
-# (https://concept.u-boot.org/u-boot/u-boot/-/merge_requests/1147). RV1106 is
-# not in u-boot master yet; when the series lands, repoint UBOOT_URL at
+# Mainline U-Boot plus the RV1103B/RV1103/RV1106 series from
+# https://concept.u-boot.org/u-boot/u-boot/-/merge_requests/1147.
+#
+# That MR has been merged into the master branch of the GitLab instance it
+# lives on, which is *not* u-boot/u-boot: github.com/u-boot/u-boot master still
+# has no arch/arm/mach-rockchip/rv1106, no board/luckfox and no rv1106
+# defconfig, and no release tag contains them. So this stays pointed at the
+# GitLab tree. The `rocka` branch still exists and still points at the commit
+# below, which is an ancestor of that master with the RV1106 files unchanged
+# since; the branch is only a fallback for hosts that refuse a fetch by SHA.
+#
+# When the series reaches u-boot/u-boot, repoint UBOOT_URL at
 # https://github.com/u-boot/u-boot.git and drop UBOOT_REF to a release tag.
 UBOOT_URL="${UBOOT_URL:-https://concept.u-boot.org/u-boot/u-boot.git}"
 UBOOT_REF="${UBOOT_REF:-10c626b398b073f49294f7f4045d5b16892cb8b8}"

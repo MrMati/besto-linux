@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
 # Build U-Boot (SPL + proper) for the board, including the RV1106 series that
-# is still in review upstream and our own Pico Max board support.
+# has not reached u-boot/u-boot yet and our own Pico Max board support.
 #
 # Outputs, all in $OUT:
 #   idbloader.img              TPL(rkbin DDR init) + SPL, written at the offset
 #                              the BootROM reads (LBA 64 on SD, 0x40000 in NAND)
-#   u-boot.img                 U-Boot proper, FIT-wrapped
+#   u-boot.img                 U-Boot proper, as a legacy uImage: binman only
+#                              wraps it in a FIT for arm64 or with OP-TEE
 #   u-boot-rockchip-usb47*.bin maskrom RAM-boot images, for `rockusb`
 
 . "$(dirname "$0")/lib.sh"

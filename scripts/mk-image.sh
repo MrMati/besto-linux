@@ -66,6 +66,13 @@ mkfs.ext4 -q -F -L rootfs -U "$rootuuid" \
 e2fsck -fp "$rootimg" >/dev/null 2>&1 || true
 
 log "writing the boot chain and the root partition into the image"
+# u-boot.img lives in the gap between its offset and the first partition. The
+# SPL finds it by raw sector, so nothing would complain about an overlap except
+# the filesystem it had quietly overwritten.
+ubootkib=$(( ($(stat -c %s "$OUT/u-boot.img") + 1023) / 1024 ))
+gapkib=$(( startmib * 1024 - SD_UBOOT_OFFSET_KIB ))
+[ "$ubootkib" -le "$gapkib" ] \
+	|| die "u-boot.img is ${ubootkib} KiB but only ${gapkib} KiB fits before the root partition"
 dd if="$rootimg" of="$img" bs=1M seek="$startmib" conv=notrunc status=none
 dd if="$OUT/idbloader.img" of="$img" bs=1K seek="$SD_IDB_OFFSET_KIB" conv=notrunc status=none
 dd if="$OUT/u-boot.img"    of="$img" bs=1K seek="$SD_UBOOT_OFFSET_KIB" conv=notrunc status=none
