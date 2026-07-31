@@ -157,6 +157,38 @@ writes the UBI image too; U-Boot falls back to it when no card has a bootflow.
 First boot: console on **UART2, 115200 8N1**, root password `luckfox` (change
 it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget.
 
+### Trying it without writing to the NAND
+
+You do not have to commit to the NAND to see this thing boot. Maskrom mode
+takes the whole bootloader over USB — 471 is the rkbin DDR blob, 472 is our SPL
+with `u-boot.img` appended — and `board_boot_order()` puts `BOOT_DEVICE_RAM`
+first whenever the BootROM reports a USB boot source, so the SPL runs the
+payload it was handed and never looks at a flash device:
+
+```bash
+scripts/flash.sh sd /dev/sdX     # card first, the board is not involved yet
+# hold BOOT while applying power
+scripts/flash.sh ram             # DDR blob + SPL + U-Boot proper, all over USB
+```
+
+U-Boot then boots the card exactly as it would in production: bootstd, ext4,
+`extlinux.conf`, kernel, DTB, rootfs, growroot. Everything is covered except
+the one step that reads the bootloader off a flash device.
+
+To cover that step too, `scripts/flash.sh ram --from-card` sends the SPL
+without its payload. With nothing to boot from RAM the SPL walks
+`u-boot,spl-boot-order` for real: SPI NAND first, where a stock board's vendor
+image is a Rockchip FIT that this SPL rejects, and then sector 0x800 of the
+card. From the U-Boot prompt you can check that byte-for-byte before trusting
+it, since a bad offset here is silent:
+
+```
+=> mmc dev 1 && mmc read 0x800000 0x800 0x400 && iminfo 0x800000
+```
+
+Nothing in either mode writes to the board, and pulling the power puts a stock
+board back exactly where it was.
+
 ## Layout
 
 ```
