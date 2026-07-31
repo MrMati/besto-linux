@@ -40,10 +40,13 @@ has full RV1106 SoC support *and* `drivers/rknpu` with a `rockchip,rv1106-rknpu`
 match, and `rv1106_defconfig` already sets `CONFIG_ROCKCHIP_RKNPU`. Four LTS
 releases newer than the SDK, with the NPU intact.
 
-**Bootloader: mainline U-Boot.** RV1106 support is
-[in review upstream][uboot-mr] (Fabio Estevam's RV1103B work plus RV1106,
-RV1103 and a `board/luckfox/pico` target, tested on a Pico Mini B booting from
-both SPI NAND and microSD). It is a normal modern U-Boot: binman, `ROCKCHIP_TPL`
+**Bootloader: mainline U-Boot.** RV1106 support comes from [!1147][uboot-mr]
+(Fabio Estevam's RV1103B work plus RV1106, RV1103 and a `board/luckfox/pico`
+target, tested on a Pico Mini B booting from both SPI NAND and microSD). That
+MR is merged into the master branch of the GitLab instance it was filed on, but
+*not* into `u-boot/u-boot`: there is still no `mach-rockchip/rv1106` and no
+`board/luckfox` in any upstream release, so the pin stays on the GitLab tree
+until it lands. It is a normal modern U-Boot: binman, `ROCKCHIP_TPL`
 for the rkbin DDR blob, standard boot, builds with a current GCC. That is worth
 far more than the vendor 2017.09 fork with its `-Wno-error` pile and Rockchip
 FIT `boot.img` format. This repo pins that branch and adds the Pico Max on top:
@@ -126,6 +129,18 @@ CI builds the whole thing on every push and uploads the images.
 The BootROM checks the SPI NAND before the microSD, so on a stock board the
 vendor bootloader in NAND wins no matter what is on the card. Put this U-Boot in
 NAND once and then iterate on the card freely.
+
+Flashing NAND is not optional, and the vendor firmware's `u-boot,spl-boot-order
+= &sdmmc, &spi_nor, &spi_nand, &emmc` does not get you out of it. Its SPL does
+try the card first, but it looks for U-Boot in a GPT partition named `uboot` or
+at raw LBA 16384, and it only accepts a FIT (`SPL_RAW_IMAGE_SUPPORT` and
+`SPL_LEGACY_IMAGE_SUPPORT` are both off in `rv1106_defconfig`) — this image puts
+a legacy uImage at 1 MiB, so the lookup fails and the SPL falls through to the
+NAND. The vendor U-Boot proper cannot help either: its bootcmd is
+`boot_fit; boot_android`, distro boot is compiled out, and the build has no ext4
+at all, so it can reach neither the extlinux config nor the rootfs. The card is
+harmless in a stock board — nothing is written, nothing is bricked — it simply
+does not boot from it.
 
 ```bash
 # 1. board into maskrom mode: hold BOOT while applying power (USB 2207:110c)
