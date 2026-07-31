@@ -54,7 +54,7 @@ jobs:
 
   uboot:
     name: u-boot
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: check
     steps:
       - uses: actions/checkout@v4
@@ -124,7 +124,7 @@ jobs:
 
   image:
     name: image (${{ matrix.profile }})
-    runs-on: blacksmith-8vcpu-ubuntu-2404
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     needs: [uboot, kernel, npu]
     strategy:
       fail-fast: false
