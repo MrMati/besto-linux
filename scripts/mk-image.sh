@@ -14,6 +14,9 @@
 
 need sgdisk mkfs.ext4 sfdisk truncate
 
+# The rootfs is full of root-owned files; reading it back needs root too.
+elevate "$@"
+
 rootdir="$OUT/rootfs"
 [ -d "$rootdir" ] || die "no rootfs at $rootdir (make rootfs)"
 [ -f "$OUT/idbloader.img" ] || die "no idbloader.img (make uboot)"
@@ -41,9 +44,14 @@ sgdisk --clear \
 rootuuid="$(sgdisk --info=1 "$img" | awk -F': ' '/Partition unique GUID/ {print tolower($2)}')"
 log "root PARTUUID=$rootuuid"
 
-# extlinux.conf needs the real root=; patch it in the staged rootfs before the
-# filesystem is created.
-sed -i "s|@@ROOT@@|PARTUUID=$rootuuid|" "$rootdir/boot/extlinux/extlinux.conf"
+# Render extlinux.conf from its template before the filesystem is created.
+# Always from the template, never in place: sed on the previous output is a
+# no-op the second time around, which would silently ship an image whose root=
+# points at the partition UUID of an earlier build.
+extlinux="$rootdir/boot/extlinux"
+[ -f "$extlinux/extlinux.conf.in" ] || die "no extlinux.conf.in (rebuild the rootfs)"
+sed "s|@@ROOT@@|PARTUUID=$rootuuid|" \
+	"$extlinux/extlinux.conf.in" > "$extlinux/extlinux.conf"
 
 log "creating ext4 root"
 rootimg="$OUT/rootfs.ext4"
@@ -87,7 +95,7 @@ if command -v mkfs.ubifs >/dev/null 2>&1 && command -v ubinize >/dev/null 2>&1; 
 		vol_name=rootfs
 		vol_flags=autoresize
 	EOF
-	ubinize -q -o "$OUT/$BOARD-rootfs.ubi" \
+	ubinize -o "$OUT/$BOARD-rootfs.ubi" \
 		-m "$NAND_PAGE_SIZE" -p "$NAND_BLOCK_SIZE" -s "$NAND_SUBPAGE_SIZE" \
 		"$OUT/ubinize.cfg"
 	rm -f "$ubifs"
@@ -95,6 +103,8 @@ if command -v mkfs.ubifs >/dev/null 2>&1 && command -v ubinize >/dev/null 2>&1; 
 else
 	warn "mtd-utils not installed; skipping the SPI NAND image"
 fi
+
+give_back "$OUT"/*.img "$OUT"/*.ubi 2>/dev/null
 
 log "artifacts:"
 ls -lh "$OUT"/*.img "$OUT"/*.ubi 2>/dev/null | sed 's|.*/||'

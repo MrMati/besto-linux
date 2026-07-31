@@ -136,3 +136,25 @@ apply_overlay() {
 }
 
 hostarch_deb() { dpkg --print-architecture 2>/dev/null || echo unknown; }
+
+# Re-execute this script as root, then hand the results back afterwards.
+#
+# Building a root filesystem means creating device nodes and files owned by
+# uids that are not ours. mmdebstrap's unshare mode can fake that with a user
+# namespace, but only where the subuid map and the ownership of the output
+# directory cooperate -- GitHub's runner workspace is one place they do not.
+# Real root is boring and works everywhere, so take it when it is free.
+elevate() {
+	[ "$(id -u)" = 0 ] && return 0
+	command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null \
+		|| die "$(basename "$0") needs root, or sudo without a password prompt"
+	log "re-running under sudo"
+	exec sudo -E "$0" "$@"
+}
+
+# give_back <path>... -- return files to whoever invoked us through sudo, so
+# the rest of the build (and the human) can still touch them.
+give_back() {
+	[ -n "${SUDO_UID:-}" ] || return 0
+	chown -h "$SUDO_UID:${SUDO_GID:-$SUDO_UID}" "$@" 2>/dev/null || true
+}
