@@ -124,6 +124,17 @@ JOBS=32 make
 
 CI builds the whole thing on every push and uploads the images.
 
+Two things dominate a cold build and neither is compilation: a 266 MiB shallow
+fetch of the Rockchip kernel tree into `src/`, and ~120 s of qemu-emulated
+`dpkg` inside mmdebstrap. Both are pure functions of what is pinned, so both
+are cached — `src/` and `dl/` are Blacksmith sticky disks in CI, and
+`build-rootfs.sh` keeps the finished base rootfs as a tarball in
+`dl/rootfs-base/` keyed by suite, arch, mirror and package list. Locally the
+same caches are just those two directories; `make distclean` drops them.
+
+The base rootfs expires after `ROOTFS_BASE_MAX_AGE_DAYS` (7) so that an
+unchanged package list still picks up Debian security updates.
+
 ## Flash
 
 The BootROM checks the SPI NAND before the microSD, so on a stock board the
