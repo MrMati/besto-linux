@@ -84,6 +84,29 @@ enable_unit() {
 	echo "warning: unit $unit not found, not enabling" >&2
 }
 
+mask_unit() {
+	mkdir -p "$target/etc/systemd/system"
+	ln -sf /dev/null "$target/etc/systemd/system/$1"
+}
+
+# There is no display and never will be. Debian's default is graphical.target
+# because the standard task is installed; on a headless board it only adds
+# display-manager.service to the transaction and a target that means nothing.
+ln -sf /usr/lib/systemd/system/multi-user.target "$target/etc/systemd/system/default.target"
+
+# Housekeeping written for a desktop or a server, running on 256MB of RAM in
+# front of an SD card or a NAND with an erase budget. apt-daily wakes up to
+# download package lists into a rootfs that is expected to be reflashed;
+# e2scrub wants LVM snapshots that do not exist here and still runs its reaper
+# on every boot; fstrim on a card behind dw_mmc is at best a long stall.
+# Nothing here is load-bearing, and all of it is one `systemctl unmask` away.
+say "masking desktop-sized housekeeping"
+for unit in apt-daily.timer apt-daily-upgrade.timer \
+	    e2scrub_all.timer e2scrub_reap.service \
+	    fstrim.timer dpkg-db-backup.timer; do
+	mask_unit "$unit"
+done
+
 say "enabling services"
 enable_unit systemd-networkd.service
 enable_unit systemd-networkd.socket sockets.target

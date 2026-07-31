@@ -190,7 +190,13 @@ To run entirely out of the NAND instead, `scripts/flash.sh nand --with-rootfs`
 writes the UBI image too; U-Boot falls back to it when no card has a bootflow.
 
 First boot: console on **UART2, 115200 8N1**, root password `luckfox` (change
-it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget.
+it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget. The card is
+handed over read-only so `systemd-fsck-root` gets to run, then remounted `rw`
+from `/etc/fstab`; the partition and filesystem grow to fill the card.
+
+Debian's desktop-sized housekeeping is masked, not deleted: `apt-daily`,
+`apt-daily-upgrade`, `e2scrub`, `fstrim` and `dpkg-db-backup` do not run on
+their own. `systemctl unmask` whichever you want back.
 
 ### Trying it without writing to the NAND
 
