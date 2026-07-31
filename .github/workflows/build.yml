@@ -120,6 +120,15 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             mmdebstrap qemu-user-static binfmt-support arch-test debian-archive-keyring \
             gdisk e2fsprogs mtd-utils zstd fdisk openssl
+      - name: register the armhf binfmt handler
+        run: |
+          # The runner boots without binfmt_misc mounted, so qemu-user-static's
+          # postinst has nothing to register into and mmdebstrap cannot run
+          # armhf maintainer scripts. Mount it, then replay the registrations.
+          sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+          sudo update-binfmts --import
+          update-binfmts --display qemu-arm
+          arch-test armhf
       - uses: actions/download-artifact@v4
         with: { name: u-boot, path: out }
       - uses: actions/download-artifact@v4
