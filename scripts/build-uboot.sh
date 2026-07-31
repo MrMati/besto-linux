@@ -14,7 +14,7 @@
 need git make "${CROSS_COMPILE}gcc" bison flex python3 swig
 
 rkbin="$(fetch rkbin "$RKBIN_URL" "$RKBIN_REF")"
-ub="$(fetch u-boot "$UBOOT_URL" "$UBOOT_REF")"
+ub="$(fetch u-boot "$UBOOT_URL" "$UBOOT_REF" "$UBOOT_BRANCH")"
 
 ddr="$rkbin/$RKBIN_DDR_BIN"
 [ -f "$ddr" ] || die "DDR blob missing: $ddr"

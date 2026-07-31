@@ -19,11 +19,18 @@
 
 . "$(dirname "$0")/lib.sh"
 
-need git "${CROSS_COMPILE}gcc" "${CROSS_COMPILE}nm" "${CROSS_COMPILE}readelf"
+need curl "${CROSS_COMPILE}gcc" "${CROSS_COMPILE}nm" "${CROSS_COMPILE}readelf"
 
-rk="$(fetch rknn-toolkit2 "$RKNPU2_URL" "$RKNPU2_REF")"
-api="$rk/rknpu2/runtime/Linux/librknn_api"
-[ -d "$api/armhf-uclibc" ] || die "rknn-toolkit2 layout changed: $api/armhf-uclibc missing"
+# rknn-toolkit2 is several gigabytes of example models around the four files we
+# actually need, so pull them straight out of the tag instead of cloning.
+raw="${RKNPU2_URL%.git}"
+raw="${raw/https:\/\/github.com/https:\/\/raw.githubusercontent.com}/$RKNPU2_REF/rknpu2/runtime/Linux/librknn_api"
+api="$OUT/rknpu2"
+rm -rf "$api"
+fetch_file "$raw/armhf-uclibc/librknnmrt.a" "$api/armhf-uclibc/librknnmrt.a"
+for h in rknn_api.h rknn_custom_op.h rknn_matmul_api.h; do
+	fetch_file "$raw/include/$h" "$api/include/$h"
+done
 
 stage="$OUT/npu-staging"
 libdir="$stage/usr/lib/arm-linux-gnueabihf"

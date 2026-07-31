@@ -27,6 +27,7 @@ mkdir -p "$SRC" "$OUT" "$DL"
 # https://github.com/u-boot/u-boot.git and drop UBOOT_REF to a release tag.
 UBOOT_URL="${UBOOT_URL:-https://concept.u-boot.org/u-boot/u-boot.git}"
 UBOOT_REF="${UBOOT_REF:-10c626b398b073f49294f7f4045d5b16892cb8b8}"
+UBOOT_BRANCH="${UBOOT_BRANCH:-rocka}"
 
 # Rockchip's 6.6 vendor kernel. This is the newest tree that has both RV1106
 # SoC support and drivers/rknpu with a rockchip,rv1106-rknpu match. Mainline
@@ -50,7 +51,9 @@ JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 
 # ---------------------------------------------------------------- helpers ---
 
-log()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
+# All progress output goes to stderr: fetch() returns a path on stdout, and
+# several callers capture it.
+log()  { printf '\033[1;36m==>\033[0m %s\n' "$*" >&2; }
 warn() { printf '\033[1;33m!!\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mxx\033[0m %s\n' "$*" >&2; exit 1; }
 
@@ -67,6 +70,7 @@ need() {
 # builds are reproducible without re-downloading a gigabyte of history.
 fetch() {
 	local name="$1" url="$2" ref="$3" branch="${4:-}" dir="$SRC/$1"
+	local pin="refs/luckfox/$name" sha=""
 
 	if [ ! -d "$dir/.git" ]; then
 		log "cloning $name"
@@ -76,18 +80,47 @@ fetch() {
 		git -C "$dir" remote set-url origin "$url"
 	fi
 
-	if ! git -C "$dir" cat-file -e "$ref^{commit}" 2>/dev/null; then
+	if ! git -C "$dir" rev-parse -q --verify "$ref^{commit}" >/dev/null 2>&1 &&
+	   ! git -C "$dir" rev-parse -q --verify "$pin^{commit}" >/dev/null 2>&1; then
 		log "fetching $name @ $ref"
-		# Try the cheap path first; fall back to the branch, then to
-		# everything, since not all servers allow fetching a bare SHA.
-		git -C "$dir" fetch --depth 1 origin "$ref" 2>/dev/null \
-			|| { [ -n "$branch" ] && git -C "$dir" fetch --depth 200 origin "$branch"; } \
-			|| git -C "$dir" fetch --tags origin
+		# A bare SHA works on GitHub; a tag name always works; some hosts
+		# allow neither, so fall back to the branch and then to the lot.
+		git -C "$dir" fetch -q --depth 1 origin "$ref" 2>/dev/null \
+			|| { [ -n "$branch" ] && git -C "$dir" fetch -q --depth 500 origin "$branch"; } \
+			|| git -C "$dir" fetch -q --tags --depth 500 origin \
+			|| die "cannot fetch $ref from $url"
+		# Fetching a tag or a SHA only sets FETCH_HEAD, so pin it down
+		# before anything else can clobber it.
+		git -C "$dir" update-ref "$pin" FETCH_HEAD
 	fi
 
-	git -C "$dir" -c advice.detachedHead=false checkout -q --force "$ref"
+	sha="$(git -C "$dir" rev-parse -q --verify "$ref^{commit}" 2>/dev/null || true)"
+	[ -n "$sha" ] || sha="$(git -C "$dir" rev-parse -q --verify "$pin^{commit}" 2>/dev/null || true)"
+	[ -n "$sha" ] || die "$name: cannot resolve '$ref' after fetching"
+
+	git -C "$dir" -c advice.detachedHead=false checkout -q --force "$sha"
 	git -C "$dir" clean -qfdx
-	echo "$dir"
+	printf '%s\n' "$dir"
+}
+
+# fetch_file <url> <dest>
+#
+# Cached download. Used where a git clone would drag in gigabytes for a handful
+# of files, which is exactly the case for rknn-toolkit2's example models.
+fetch_file() {
+	local url="$1" dest="$2" cache
+	# All the argument expansions in a single `local` happen before any of the
+	# assignments take effect, so $url is not usable until the next statement.
+	cache="$DL/$(printf '%s' "$url" | sha256sum | cut -c1-16)-$(basename "$url")"
+
+	if [ ! -s "$cache" ]; then
+		log "downloading $(basename "$url")"
+		curl -fsSL --retry 3 --retry-delay 2 -o "$cache.part" "$url" \
+			|| die "download failed: $url"
+		mv "$cache.part" "$cache"
+	fi
+	mkdir -p "$(dirname "$dest")"
+	cp -f "$cache" "$dest"
 }
 
 # apply_overlay <src-tree-dir> <dest-dir>
