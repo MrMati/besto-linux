@@ -75,6 +75,34 @@ else
 	echo "  ok   the SD u-boot offset agrees between board.env and the defconfig"
 fi
 
+log "source patches"
+# A patch nobody applies is worse than no patch: it reads like the bug is
+# fixed. Every patches directory has to be consumed by its build script, and
+# every patch has to be a diff git can parse -- a mangled hunk header only
+# turns up an hour into a build otherwise.
+shopt -s nullglob
+npatch=0; bad=0
+for d in "$BOARD_DIR"/*/patches; do
+	comp="$(basename "$(dirname "$d")")"
+	script="$TOP/scripts/build-$comp.sh"
+	if ! grep -q "$comp/patches/\*.patch" "$script" 2>/dev/null; then
+		echo "  FAIL $comp/patches exists but build-$comp.sh never applies it"; bad=1
+	fi
+	for p in "$d"/*.patch; do
+		npatch=$((npatch + 1))
+		if ! git apply --numstat "$p" >/dev/null 2>&1; then
+			echo "  FAIL $comp/patches/$(basename "$p") is not a diff git can apply"; bad=1
+		fi
+		grep -q '^Subject: ' "$p" || { echo "  FAIL $comp/patches/$(basename "$p") has no Subject:"; bad=1; }
+	done
+done
+shopt -u nullglob
+if [ "$bad" -eq 0 ]; then
+	echo "  ok   $npatch patches, all parseable and applied by their build script"
+else
+	fail=1
+fi
+
 log "kernel devicetree"
 check test -f "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts"
 # The whole point of the board is the NPU; a DTS that forgets to enable it
@@ -125,6 +153,26 @@ if grep -qE '^CONFIG_DRM=y' "${frags[@]}"; then
 	echo '  FAIL fragment enables DRM, which switches RKNPU to the DRM GEM backend'; fail=1
 else
 	echo '  ok   DRM stays off, RKNPU keeps the dma-heap backend'
+fi
+
+log "rootfs overlay"
+# /usr/lib/tmpfiles.d/debian.conf carries "L+ /etc/default/locale - - - -
+# ../locale.conf", and L+ deletes whatever is in the way. A real file there
+# survives until systemd-tmpfiles-setup.service runs and no longer, so the
+# locale has to be written to /etc/locale.conf. build-rootfs.sh holds this
+# against the tmpfiles.d of the rootfs it just built; this is the same claim
+# without a build, because finding out an hour in is not the same as finding
+# out now.
+ovl="$TOP/rootfs/overlay"
+if [ "$(readlink "$ovl/etc/default/locale")" = "../locale.conf" ]; then
+	echo '  ok   /etc/default/locale is the symlink tmpfiles.d insists on'
+else
+	echo '  FAIL /etc/default/locale must be a symlink to ../locale.conf, or tmpfiles will delete it'; fail=1
+fi
+if grep -q '^LANG=' "$ovl/etc/locale.conf" 2>/dev/null; then
+	echo '  ok   /etc/locale.conf sets LANG'
+else
+	echo '  FAIL /etc/locale.conf does not set LANG; pam_env will log on every login'; fail=1
 fi
 
 log "npu glibc shim"

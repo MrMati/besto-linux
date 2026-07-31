@@ -178,12 +178,20 @@ else
 	log "base rootfs: running mmdebstrap (not cached)"
 	rm -f "$base.part"
 	# mmdebstrap does not merge /usr on its own -- that is what its merged-usr
-	# hook is for, and without it a trixie rootfs comes up with /bin, /sbin and
+	# hook is for, and without it a rootfs can come up with /bin, /sbin and
 	# /lib as real directories. Debian has not supported that layout since
-	# bookworm, and systemd says so on every boot ("System is tainted:
-	# unmerged-bin"). It also quietly invalidates the reasoning in the overlay
-	# staging above, which counts on /lib being a symlink into usr/lib. Only the
-	# cold path needs the hook installed; a cached base already has it applied.
+	# bookworm, and it quietly invalidates the reasoning in the overlay staging
+	# above, which counts on /lib being a symlink into usr/lib. In practice
+	# trixie's usr-is-merged gets there on its own, so the hook is insurance --
+	# the assertion after the unpack is what actually holds the property. Only
+	# the cold path needs the hook installed; a cached base already has it
+	# applied.
+	#
+	# This is not what systemd's "System is tainted: unmerged-bin" is about,
+	# despite the name. That check (src/core/taint.c) fires when /usr/sbin is
+	# not a symlink to /usr/bin -- the sbin merge, DEP17 -- which Debian has
+	# not done as of trixie and no hook here should do behind dpkg's back.
+	# Expect that taint on every boot until Debian finishes the transition.
 	usrmerge=/usr/share/mmdebstrap/hooks/merged-usr
 	[ -d "$usrmerge" ] || die "mmdebstrap has no merged-usr hook at $usrmerge"
 	# --format is explicit because the output name has to be a temporary one:
@@ -231,6 +239,39 @@ done
 
 # Everything above is shared between builds; everything below is this build.
 "$hookdir/customize" "$rootdir"
+
+# systemd-tmpfiles runs on every boot and owns some of /etc. Debian's
+# debian.conf has three L+ lines, and L+ means "delete whatever is there and
+# put a symlink here", so a file this overlay ships at one of those paths lives
+# exactly as long as it takes systemd-tmpfiles-setup.service to start. That is
+# how /etc/default/locale was lost: the overlay shipped a real file, tmpfiles
+# replaced it with a symlink to /etc/locale.conf, which nothing shipped, and
+# every login logged "pam_env(login:session): Unable to open env file". A file
+# that is deleted before userspace reads it is the worst kind of wrong, because
+# the build, the image and the git tree all look correct.
+while read -r path target; do
+	src="$ovl$path"
+	[ -e "$src" ] || [ -L "$src" ] || continue
+	if [ ! -L "$src" ]; then
+		die "rootfs: the overlay ships $path, but tmpfiles.d replaces it with a symlink to $target on every boot; ship $target instead"
+	fi
+	# Shipping the symlink is fine, but only if it agrees with tmpfiles:
+	# otherwise tmpfiles silently wins on the first boot and the build is
+	# describing a rootfs that never exists.
+	have="$(readlink "$src")"
+	[ "$have" = "$target" ] \
+		|| die "rootfs: the overlay points $path at $have, tmpfiles.d points it at $target"
+done < <(cat "$rootdir"/usr/lib/tmpfiles.d/*.conf "$rootdir"/etc/tmpfiles.d/*.conf 2>/dev/null \
+	| awk '$1 ~ /^L\+?$/ && $2 ~ /^\/etc\// { print $2, ($7 == "" ? "-" : $7) }')
+
+# The symlink resolving is a separate claim from the symlink being right, and
+# it is the one that actually failed.
+locale="$(readlink -f -- "$rootdir/etc/default/locale" 2>/dev/null || true)"
+case "$locale" in
+"$rootdir"/*) [ -s "$locale" ] || die "rootfs: /etc/default/locale resolves to ${locale#$rootdir}, which is empty or missing" ;;
+*)            die "rootfs: /etc/default/locale does not resolve inside the rootfs" ;;
+esac
+grep -q '^LANG=' "$locale" || die "rootfs: ${locale#$rootdir} sets no LANG"
 
 # The kernel's verdict on a rootfs is one line long -- "No working init found"
 # -- and by then it has cost a card write and a reboot, so resolve init here.

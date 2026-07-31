@@ -241,6 +241,7 @@ board/luckfox-pico-max/
   board.env                    every board-specific number, in one file
   kernel/dts/                  rv1106g3-luckfox-pico-max.dts
   kernel/config/               the fragment merged over rv1106_defconfig
+  kernel/patches/              the few fixes that touch files we do not own
   uboot/tree/                  files copied verbatim into the U-Boot checkout
   uboot/patches/               the few fixes that touch files we do not own
 rootfs/
@@ -281,7 +282,26 @@ Verified on a board: both `scripts/flash.sh ram` and the boot chain in the
 NAND bring a Pico Max up in U-Boot proper with the right 256 MB of DRAM, the
 SPL reads U-Boot out of the SPI NAND, the environment loads, standard boot
 finds the `extlinux` bootflow on the card, and the kernel comes up and mounts
-the ext4 root by PARTUUID. Userspace past `init` has not been exercised yet.
+the ext4 root by PARTUUID. Userspace runs: root is handed over read-only,
+`systemd-fsck-root` checks it, systemd remounts it read-write and reaches
+`multi-user.target`, the first boot is detected as one, the NPU's 32 MB
+dma-heap reserves, the RTC registers and USB host enumerates.
+
+Not exercised yet: booting from UBI in the NAND, which the kernel devicetree
+cannot do as it stands because it declares no MTD partitions for `ubi.mtd=ubi`
+to attach to, and an inference run against `librknnmrt.so.2` on hardware.
+
+Wrong on a booted board, and not fixed yet:
+
+- `rockchip-cpufreq: failed to get OPP table, error -95`. There is no CPU DVFS
+  and no thermal cooling device; the CPU stays on the OPP U-Boot left it at.
+- the Ethernet MAC is random on every boot (`rk_vendor_read eth mac address
+  failed`), so the board takes a new DHCP lease each time.
+- the USB gadget never comes up: `phy ... illegal mode`, then `no UDC
+  available; is the controller in peripheral mode?`. The USB-C row in the
+  table above is what the hardware and the units are for, not something that
+  works today. USB host does work.
+- `Kernel memory protection not selected`.
 
 Getting there took the SPL devicetree seriously: nothing in `rv1106.dtsi` is
 marked `bootph-*`, so fdtgrep was handing the SPL a devicetree with no CRU in
