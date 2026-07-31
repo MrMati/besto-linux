@@ -101,6 +101,16 @@
 	 */
 	assigned-clocks = <&cru ACLK_RKNN>;
 	assigned-clock-rates = <500000000>;
+
+	/*
+	 * rv1106.dtsi gives the NPU an interrupt but no interrupt-names, and
+	 * rknpu_register_irq() asks for "npu_irq" by name first. The 6.6 path
+	 * falls back to platform_get_irq(pdev, 0) and the NPU works, but not
+	 * before platform_get_irq_byname() has logged
+	 *   RKNPU ff660000.npu: error -ENXIO: IRQ npu_irq not found
+	 * at error level, which reads like a dead NPU and is not one.
+	 */
+	interrupt-names = "npu_irq";
 	status = "okay";
 };
 
