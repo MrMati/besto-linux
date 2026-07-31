@@ -151,6 +151,20 @@ scripts/flash.sh nand            # write idbloader + u-boot into the NAND
 scripts/flash.sh sd /dev/sdX     # asks you to confirm the device name
 ```
 
+The BOOT button is only needed the first time. Once this U-Boot is on the
+board, `run maskrom` at its prompt sets the BootROM's download flag and resets
+straight back into maskrom mode, so a reflash is one command instead of a power
+cycle:
+
+```
+=> run maskrom
+```
+
+That is `mw.l 0xff020200 0xef08a53c; reset` spelled out, which is what U-Boot
+itself does when it sees the download key held. The flag lives in an OS_REG
+that a warm reset does not clear, and the BootROM reads it before it touches
+any flash device; if it ever ignores the flag, U-Boot simply comes back up.
+
 To run entirely out of the NAND instead, `scripts/flash.sh nand --with-rootfs`
 writes the UBI image too; U-Boot falls back to it when no card has a bootflow.
 
