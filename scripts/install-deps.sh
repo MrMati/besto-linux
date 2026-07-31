@@ -10,8 +10,9 @@ pkgs=(
 	python3-pyelftools swig libpython3-dev
 	# u-boot binman/tooling
 	uuid-dev liblz4-tool lz4 zstd
-	# rootfs
-	mmdebstrap qemu-user-static arch-test debian-archive-keyring
+	# rootfs. eatmydata is for mmdebstrap's hook of the same name, which drops
+	# dpkg's fsyncs while the base rootfs is being built.
+	mmdebstrap qemu-user-static arch-test debian-archive-keyring eatmydata
 	# images
 	gdisk e2fsprogs dosfstools mtd-utils util-linux fdisk
 	# misc

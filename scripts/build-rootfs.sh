@@ -104,7 +104,7 @@ cat > "$ovl/etc/os-release.luckfox" <<-EOF
 	LUCKFOX_BUILD="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 EOF
 
-# --- hooks ------------------------------------------------------------------
+# --- customize --------------------------------------------------------------
 
 hookdir="$OUT/rootfs-hooks"
 rm -rf "$hookdir"; mkdir -p "$hookdir"
@@ -130,14 +130,79 @@ export LUCKFOX_HOSTNAME="$ROOTFS_HOSTNAME"
 export LUCKFOX_ROOT_PASSWORD="$ROOTFS_ROOT_PASSWORD"
 export LUCKFOX_KVER="$kver"
 
-log "running mmdebstrap"
-mmdebstrap \
-	--arch="$ROOTFS_ARCH" \
-	--variant=important \
-	--include="$(IFS=,; echo "${pkgs[*]}")" \
-	--components=main,contrib,non-free-firmware \
-	--customize-hook="$hookdir/customize \$1" \
-	"$ROOTFS_SUITE" "$rootdir" "$ROOTFS_MIRROR"
+# --- base rootfs ------------------------------------------------------------
+#
+# mmdebstrap is ~95% of this script's runtime, and almost all of that is
+# qemu-user emulating armhf dpkg and maintainer scripts -- the packages
+# themselves download in about two seconds. Nothing in that work depends on
+# this build: it is a pure function of the suite, the mirror and the package
+# list, so cache the result and only pay for it when one of those changes.
+#
+# eatmydata drops dpkg's fsync calls, which is worth a few percent on the cold
+# path and nothing at all on the warm one. It is only used to build the base;
+# the tarball that comes out is unaffected.
+#
+# The package list is sorted into the key so that reordering a .list file is
+# not a cache miss. The profile is in the filename rather than only in the hash
+# so that the prune below cannot evict a sibling profile's base when both share
+# a $DL -- which is exactly what the two image jobs do locally.
+mkdir -p "$DL/rootfs-base"
+base_key="$( { printf '%s\n' "$ROOTFS_SUITE" "$ROOTFS_ARCH" "$ROOTFS_MIRROR" \
+	"$ROOTFS_COMPONENTS" "$ROOTFS_VARIANT"
+	printf '%s\n' "${pkgs[@]}" | LC_ALL=C sort; } | sha256sum | cut -c1-16)"
+base_pfx="$ROOTFS_SUITE-$ROOTFS_ARCH-$ROOTFS_PROFILE"
+base="$DL/rootfs-base/$base_pfx-$base_key.tar"
+
+# Debian keeps moving under a cache key that cannot see it: the package list is
+# unchanged but the packages it resolves to pick up security updates. Age the
+# base out so a long-lived branch cannot ship a stale userspace indefinitely.
+if [ -s "$base" ] && [ -n "$(find "$base" -mtime "+$ROOTFS_BASE_MAX_AGE_DAYS" -print -quit)" ]; then
+	log "base rootfs older than $ROOTFS_BASE_MAX_AGE_DAYS days, rebuilding"
+	rm -f "$base"
+fi
+
+if [ -s "$base" ]; then
+	log "base rootfs: cached ($(du -m "$base" | cut -f1) MiB, ${base_key})"
+else
+	log "base rootfs: running mmdebstrap (not cached)"
+	rm -f "$base.part"
+	# --format is explicit because the output name has to be a temporary one:
+	# mmdebstrap picks directory vs tar from the extension, and a half-written
+	# .tar left behind by a cancelled job would be indistinguishable from a
+	# complete one on the next run.
+	mmdebstrap \
+		--arch="$ROOTFS_ARCH" \
+		--variant="$ROOTFS_VARIANT" \
+		--include="$(IFS=,; echo "${pkgs[*]}")" \
+		--components="$ROOTFS_COMPONENTS" \
+		--hook-dir=/usr/share/mmdebstrap/hooks/eatmydata \
+		--format=tar \
+		"$ROOTFS_SUITE" "$base.part" "$ROOTFS_MIRROR"
+	mv "$base.part" "$base"
+	# One base per suite/arch/profile is enough. Without this the cache grows
+	# by another 200MB every time someone edits a package list.
+	find "$DL/rootfs-base" -maxdepth 1 -type f \
+		-name "$base_pfx-*.tar" ! -name "${base##*/}" -delete
+fi
+
+# --numeric-owner because the uids in the tarball are the target's, and the
+# build host's /etc/passwd has nothing to do with them.
+log "unpacking base rootfs"
+tar -C "$rootdir" --numeric-owner --exclude='./dev/*' -xf "$base"
+
+# /dev is split out because those entries are device nodes and mknod needs
+# CAP_MKNOD, which a container often does not have. Unlike the rest of the
+# tree this is not worth failing over: the tar format carries the nodes even
+# where the filesystem cannot, mmdebstrap writing a directory silently dropped
+# them on exactly the same hosts, and the kernel mounts devtmpfs over /dev
+# before init runs -- CONFIG_DEVTMPFS_MOUNT is one of the symbols the config
+# check holds -- so the image boots either way.
+if ! tar -C "$rootdir" --numeric-owner --wildcards -xf "$base" './dev/*' 2>/dev/null; then
+	warn "no static /dev nodes (host cannot mknod); devtmpfs will populate /dev at boot"
+fi
+
+# Everything above is shared between builds; everything below is this build.
+"$hookdir/customize" "$rootdir"
 
 # The kernel's verdict on a rootfs is one line long -- "No working init found"
 # -- and by then it has cost a card write and a reboot, so resolve init here.
