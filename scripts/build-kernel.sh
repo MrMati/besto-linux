@@ -18,6 +18,20 @@ mkdir -p "$kb"
 
 kmake() { make -C "$k" O="$kb" ARCH=arm CROSS_COMPILE="$CROSS_COMPILE" "$@"; }
 
+# --- patches ----------------------------------------------------------------
+#
+# Fixes to code we do not own go in kernel/patches as real patches, applied
+# before anything else touches the tree. fetch() resets to the pin every time,
+# so they always apply to exactly the tree they were written against, and a
+# patch that stops applying is a build failure rather than a silent skip.
+shopt -s nullglob
+for p in "$BOARD_DIR"/kernel/patches/*.patch; do
+	log "applying $(basename "$p")"
+	git -C "$k" apply --whitespace=nowarn "$p" \
+		|| die "$(basename "$p") does not apply to linux @ $KERNEL_REF"
+done
+shopt -u nullglob
+
 # --- board devicetree -------------------------------------------------------
 #
 # Rockchip's tree has no Luckfox board at all, so the DTS lives here and is

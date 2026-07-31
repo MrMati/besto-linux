@@ -241,6 +241,7 @@ board/luckfox-pico-max/
   board.env                    every board-specific number, in one file
   kernel/dts/                  rv1106g3-luckfox-pico-max.dts
   kernel/config/               the fragment merged over rv1106_defconfig
+  kernel/patches/              the few fixes that touch files we do not own
   uboot/tree/                  files copied verbatim into the U-Boot checkout
   uboot/patches/               the few fixes that touch files we do not own
 rootfs/
