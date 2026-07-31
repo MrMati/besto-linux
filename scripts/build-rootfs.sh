@@ -178,12 +178,20 @@ else
 	log "base rootfs: running mmdebstrap (not cached)"
 	rm -f "$base.part"
 	# mmdebstrap does not merge /usr on its own -- that is what its merged-usr
-	# hook is for, and without it a trixie rootfs comes up with /bin, /sbin and
+	# hook is for, and without it a rootfs can come up with /bin, /sbin and
 	# /lib as real directories. Debian has not supported that layout since
-	# bookworm, and systemd says so on every boot ("System is tainted:
-	# unmerged-bin"). It also quietly invalidates the reasoning in the overlay
-	# staging above, which counts on /lib being a symlink into usr/lib. Only the
-	# cold path needs the hook installed; a cached base already has it applied.
+	# bookworm, and it quietly invalidates the reasoning in the overlay staging
+	# above, which counts on /lib being a symlink into usr/lib. In practice
+	# trixie's usr-is-merged gets there on its own, so the hook is insurance --
+	# the assertion after the unpack is what actually holds the property. Only
+	# the cold path needs the hook installed; a cached base already has it
+	# applied.
+	#
+	# This is not what systemd's "System is tainted: unmerged-bin" is about,
+	# despite the name. That check (src/core/taint.c) fires when /usr/sbin is
+	# not a symlink to /usr/bin -- the sbin merge, DEP17 -- which Debian has
+	# not done as of trixie and no hook here should do behind dpkg's back.
+	# Expect that taint on every boot until Debian finishes the transition.
 	usrmerge=/usr/share/mmdebstrap/hooks/merged-usr
 	[ -d "$usrmerge" ] || die "mmdebstrap has no merged-usr hook at $usrmerge"
 	# --format is explicit because the output name has to be a temporary one:
