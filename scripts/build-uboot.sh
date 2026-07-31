@@ -26,6 +26,18 @@ ddr="$rkbin/$RKBIN_DDR_BIN"
 # (RV1103) only. Everything the Max needs is new files, except two: the SoC
 # Kconfig needs a target symbol, and MAINTAINERS wants the new defconfig
 # listed. Both are handled below so the overlay stays a pure file copy.
+#
+# Fixes to code we do not own go in uboot/patches as real patches, applied
+# before the overlay. fetch() resets the tree to the pin every time, so they
+# always apply to exactly the tree they were written against.
+
+shopt -s nullglob
+for p in "$BOARD_DIR"/uboot/patches/*.patch; do
+	log "applying $(basename "$p")"
+	git -C "$ub" apply --whitespace=nowarn "$p" \
+		|| die "$(basename "$p") does not apply to u-boot @ $UBOOT_REF"
+done
+shopt -u nullglob
 
 apply_overlay "$BOARD_DIR/uboot/tree" "$ub"
 
@@ -58,6 +70,45 @@ grep -q luckfox-pico-max "$ub/board/luckfox/pico/MAINTAINERS" 2>/dev/null || \
 
 log "configuring u-boot ($UBOOT_DEFCONFIG)"
 make -C "$ub" O="$OUT/u-boot" CROSS_COMPILE="$CROSS_COMPILE" "$UBOOT_DEFCONFIG"
+
+# kconfig silently ignores a symbol it has never heard of, so a typo in the
+# defconfig -- CONFIG_ENV_MTD_NAME for CONFIG_ENV_MTD_DEV, say -- costs a board
+# bring-up round trip to find. Insist that every line we wrote survived into
+# .config with the value we asked for.
+log "verifying the defconfig took effect"
+python3 - "$ub/configs/$UBOOT_DEFCONFIG" "$OUT/u-boot/.config" <<-'PY'
+	import sys
+
+	want_file, config_file = sys.argv[1], sys.argv[2]
+
+	have = {}
+	for line in open(config_file):
+	    line = line.strip()
+	    if line.startswith('CONFIG_'):
+	        sym, _, val = line.partition('=')
+	        have[sym] = val
+	    elif line.startswith('# CONFIG_') and line.endswith(' is not set'):
+	        have[line.split()[1]] = 'n'
+
+	bad = []
+	for line in open(want_file):
+	    line = line.strip()
+	    if not line or (line.startswith('#') and not line.endswith(' is not set')):
+	        continue
+	    if line.startswith('#'):
+	        sym, want = line.split()[1], 'n'
+	    else:
+	        sym, _, want = line.partition('=')
+	    got = have.get(sym)
+	    if got is None:
+	        bad.append(f'{sym}: absent from .config -- unknown symbol, or unmet dependencies')
+	    elif got != want:
+	        bad.append(f'{sym}: asked for {want}, got {got}')
+
+	if bad:
+	    print('\n'.join('  ' + b for b in bad), file=sys.stderr)
+	    sys.exit(f'{len(bad)} defconfig symbol(s) did not take effect')
+	PY
 
 log "building u-boot"
 make -C "$ub" O="$OUT/u-boot" CROSS_COMPILE="$CROSS_COMPILE" \

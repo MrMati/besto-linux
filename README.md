@@ -179,8 +179,11 @@ To cover that step too, `scripts/flash.sh ram --from-card` sends the SPL
 without its payload. With nothing to boot from RAM the SPL walks
 `u-boot,spl-boot-order` for real: SPI NAND first, where a stock board's vendor
 image is a Rockchip FIT that this SPL rejects, and then sector 0x800 of the
-card. From the U-Boot prompt you can check that byte-for-byte before trusting
-it, since a bad offset here is silent:
+card. Falling through like that only works because `SPL_RAW_IMAGE_SUPPORT` is
+off: with it on, the RAM loader takes the empty payload for a headerless
+U-Boot, "succeeds", and jumps into whatever DRAM happened to contain. From the
+U-Boot prompt you can check the card byte-for-byte before trusting it, since a
+bad offset here is silent:
 
 ```
 => mmc dev 1 && mmc read 0x800000 0x800 0x400 && iminfo 0x800000
@@ -197,6 +200,7 @@ board/luckfox-pico-max/
   kernel/dts/                  rv1106g3-luckfox-pico-max.dts
   kernel/config/               the fragment merged over rv1106_defconfig
   uboot/tree/                  files copied verbatim into the U-Boot checkout
+  uboot/patches/               the few fixes that touch files we do not own
 rootfs/
   packages/                    minimal / standard / dev
   overlay/                     everything shipped into /
@@ -231,10 +235,17 @@ config fragment survives `merge_config.sh` with all 18 load-bearing symbols
 intact and the FIQ debugger off, and `librknnmrt.so.2` links clean with the full
 RKNN API exported and no text relocations.
 
-Not yet verified on hardware — the U-Boot RV1106 series is upstream-tested on a
-Pico Mini B (RV1103, 64 MB), and the Pico Max board support here is new. If you
-boot it, the interesting failure points are the SPL finding U-Boot in NAND, the
-DDR size handoff, and the `sdmmc` card-detect pin.
+On hardware, `scripts/flash.sh ram` gets a Pico Max through the DDR blob, the
+SPL and into U-Boot proper with the right 256 MB, so the maskrom path and the
+DRAM handoff are real. Whether the SPL can then read U-Boot proper off a flash
+device, and whether Linux comes up behind it, is still unverified.
+
+The first attempt at that could not: nothing in `rv1106.dtsi` is marked
+`bootph-*`, so fdtgrep handed the SPL a devicetree with no CRU in it and both
+storage drivers failed with `-22` on a clock they could not resolve. The
+`-u-boot.dtsi` here names the CRU, the GRF, the pinctrl node and the pin groups
+the SPL uses, which is what `rk356x-u-boot.dtsi` does and what the upstream
+Pico Mini B (RV1103, 64 MB, SPI NAND only) is missing.
 
 ## Credits
 
