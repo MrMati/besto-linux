@@ -251,8 +251,9 @@ RKNN API exported and no text relocations.
 
 Verified on a board: both `scripts/flash.sh ram` and the boot chain in the
 NAND bring a Pico Max up in U-Boot proper with the right 256 MB of DRAM, the
-SPL reads U-Boot out of the SPI NAND, the environment loads, and standard boot
-finds the `extlinux` bootflow on the card. Linux itself is still unverified.
+SPL reads U-Boot out of the SPI NAND, the environment loads, standard boot
+finds the `extlinux` bootflow on the card, and the kernel comes up and mounts
+the ext4 root by PARTUUID. Userspace past `init` has not been exercised yet.
 
 Getting there took the SPL devicetree seriously: nothing in `rv1106.dtsi` is
 marked `bootph-*`, so fdtgrep was handing the SPL a devicetree with no CRU in
