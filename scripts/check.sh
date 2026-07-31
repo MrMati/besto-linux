@@ -63,6 +63,17 @@ if printf '%s' "$npu_node" | grep -q 'assigned-clock-rates = <500000000>'; then
 else
 	echo '  FAIL &npu does not pin aclk_rknn to 500 MHz'; fail=1
 fi
+# The TRNG is the board's only entropy source. rv1106.dtsi ships it disabled,
+# and with it disabled systemd-random-seed blocks on getrandom(2) until its
+# 10 minute timeout on every single boot, dragging the rest of the boot with
+# it. The driver is built in, so the devicetree is the only thing keeping it
+# off.
+rng_node="$(sed -n '/^&rng {/,/^};/p' "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts")"
+if printf '%s' "$rng_node" | grep -q 'status = "okay"'; then
+	echo '  ok   &rng is enabled, the CRNG has a hardware seed'
+else
+	echo '  FAIL &rng is not enabled, userspace will stall on getrandom(2)'; fail=1
+fi
 
 log "kernel config fragment"
 frag="$BOARD_DIR/kernel/config/glibc-distro.config"

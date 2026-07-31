@@ -169,6 +169,20 @@
 	status = "okay";
 };
 
+/* -------------------------------------------------------------- entropy --- */
+
+/*
+ * The TRNG. rv1106.dtsi leaves it disabled, and with no other entropy source
+ * on the board the CRNG never initialises: systemd-random-seed.service blocks
+ * on getrandom(2) for its full 10 minute timeout on every boot, and everything
+ * ordered after it waits with it. CONFIG_HW_RANDOM_ROCKCHIP is already in the
+ * kernel fragment; the driver binds "rockchip,trngv1" and reports quality 999,
+ * so simply turning the node on credits entropy early enough to unblock boot.
+ */
+&rng {
+	status = "okay";
+};
+
 /* -------------------------------------------------------------- console --- */
 
 &uart2 {
