@@ -40,35 +40,29 @@ ARCH=arm "$k/scripts/kconfig/merge_config.sh" -m -O "$kb" \
 kmake olddefconfig >/dev/null
 
 # merge_config.sh is advisory: it warns about symbols that did not take rather
-# than failing. For a config this opinionated that is not good enough, so check
-# the ones that would silently produce an unbootable or NPU-less kernel.
-required=(
-	CONFIG_ROCKCHIP_RKNPU=y
-	CONFIG_ROCKCHIP_RKNPU_DMA_HEAP=y
-	CONFIG_DMABUF_HEAPS_ROCKCHIP_CMA_HEAP=y
-	CONFIG_CGROUPS=y
-	# rv1106_defconfig explicitly disables this one, so it only ever comes
-	# from the fragment. Without it flock() is ENOSYS and POSIX locks are
-	# EACCES, which takes out systemd-sysusers, cron, udev and agetty.
-	CONFIG_FILE_LOCKING=y
-	# No RNG means userspace blocks on getrandom() until the CRNG is seeded
-	# from jitter alone, which on this board is minutes.
-	CONFIG_HW_RANDOM_ROCKCHIP=y
-	CONFIG_DEVTMPFS_MOUNT=y
-	CONFIG_EXT4_FS=y
-	CONFIG_ZRAM=y
-	CONFIG_SERIAL_8250_CONSOLE=y
-	CONFIG_MMC_DW_ROCKCHIP=y
-	CONFIG_DWMAC_ROCKCHIP=y
-	CONFIG_REGULATOR_PWM=y
-	CONFIG_UBIFS_FS=y
-)
+# than failing, and olddefconfig can drop more afterwards. This used to be
+# guarded by a hand-written list of a dozen symbols, which is exactly as good
+# as the day someone last updated it -- when it was last audited, 33 of the
+# fragments' assignments were being discarded, including all of USB.
+#
+# So do not maintain a list. Every line in the fragments is a claim about the
+# final .config; hold all of them.
 fail=0
-for kv in "${required[@]}"; do
-	grep -qx "$kv" "$kb/.config" || { warn "kernel config lost $kv"; fail=1; }
-done
-grep -qx '# CONFIG_FIQ_DEBUGGER is not set' "$kb/.config" || \
-	{ warn "FIQ debugger is still enabled; the console will be ttyFIQ0"; fail=1; }
+while read -r sym want; do
+	if [ "$want" = n ]; then
+		if grep -q "^CONFIG_$sym=" "$kb/.config"; then
+			warn "CONFIG_$sym should be off, came out as $(grep -m1 "^CONFIG_$sym=" "$kb/.config")"
+			fail=1
+		fi
+	elif ! grep -qxF "CONFIG_$sym=$want" "$kb/.config"; then
+		# Almost always an unmet dependency, a bool written as =m, or a
+		# symbol that does not exist in this tree. `make menuconfig` and
+		# / to search for the symbol will say which.
+		warn "CONFIG_$sym=$want did not take"
+		fail=1
+	fi
+done < <(sed -nE 's/^CONFIG_([A-Za-z0-9_]+)=(.*)$/\1 \2/p; s/^# CONFIG_([A-Za-z0-9_]+) is not set$/\1 n/p' \
+	"$BOARD_DIR"/kernel/config/*.config)
 [ "$fail" -eq 0 ] || die "kernel configuration did not come out as intended"
 
 # --- build ------------------------------------------------------------------
