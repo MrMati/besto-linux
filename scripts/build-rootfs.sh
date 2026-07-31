@@ -114,7 +114,13 @@ cat > "$hookdir/customize" <<HOOK
 set -eu
 target="\$1"
 
-tar -C "$ovl" -cf - . | tar -C "\$target" --keep-directory-symlink -xf -
+# --no-same-owner because the overlay is assembled from a git checkout that
+# belongs to whoever cloned it, and tar run by root faithfully reproduces
+# those uids in the rootfs. The overlay ships etc/, so /etc itself ends up
+# owned by the build user: systemd-tmpfiles then refuses to follow it
+# ("Detected unsafe path transition /etc (owned by 1001)") and anything
+# that trusts /etc ownership is one bad uid away from breaking.
+tar -C "$ovl" -cf - . | tar -C "\$target" --keep-directory-symlink --no-same-owner -xf -
 
 . "$TOP/rootfs/hooks/customize.sh"
 HOOK

@@ -1,0 +1,4 @@
+# Without this every login logs "pam_env(login:session): Unable to open env
+# file: /etc/default/locale". C.UTF-8 is built into glibc, so it needs no
+# locales package and no locale-gen on a 256MB board.
+LANG=C.UTF-8
