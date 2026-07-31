@@ -18,10 +18,39 @@ done
 echo "  ok   $(find "$TOP/scripts" -name '*.sh' | wc -l) build scripts, 3 target scripts"
 
 log "board definition"
-for v in BOARD_NAME SOC DRAM_SIZE_MB RKBIN_DDR_BIN UBOOT_DEFCONFIG KERNEL_DEFCONFIG KERNEL_DTS CMA_SIZE; do
+for v in BOARD_NAME SOC DRAM_SIZE_MB RKBIN_DDR_BIN UBOOT_DEFCONFIG KERNEL_DEFCONFIG KERNEL_DTS RK_DMA_HEAP_SIZE; do
 	if [ -z "${!v:-}" ]; then echo "  FAIL $v is unset"; fail=1; fi
 done
 echo "  ok   board.env defines the required variables"
+
+log "boot arguments"
+# The NPU heap is sized by rk_dma_heap_cma=. A bare cma= is not just ignored:
+# with CMA_INACTIVE the reservation collapses to zero and the kernel answers
+# with a memblock stack dump. Neither bootargs may carry one.
+pico_env="$BOARD_DIR/uboot/tree/board/luckfox/pico/pico-max.env"
+if bare_cma="$(grep -nE '^[[:space:]]*(append |[A-Za-z_]*bootargs=)' \
+		"$TOP/scripts/build-rootfs.sh" "$pico_env" \
+		| grep -E '(^|[[:space:]])cma=')"; then
+	echo '  FAIL a bootargs line still passes cma=; the knob is rk_dma_heap_cma='
+	echo "$bare_cma" | sed 's/^/       /'; fail=1
+else
+	echo '  ok   no bootargs pass the generic cma='
+fi
+# The two heap sizes are written out in two places by two different toolchains,
+# so nothing but this check keeps them together.
+ubi_heap="$(sed -nE 's/^ubi_bootargs=.*[[:space:]]rk_dma_heap_cma=([^[:space:]]+).*$/\1/p' "$pico_env")"
+if [ "$ubi_heap" != "$RK_DMA_HEAP_SIZE" ]; then
+	echo "  FAIL ubi_bootargs asks for rk_dma_heap_cma=${ubi_heap:-<nothing>}, board.env says $RK_DMA_HEAP_SIZE"; fail=1
+else
+	echo "  ok   the NPU heap size agrees between board.env and ubi_bootargs"
+fi
+# Handing the card over rw skips systemd-fsck-root.service for ever, because
+# its ConditionPathIsReadWrite=!/ is the only thing that ever schedules a check.
+if grep -qE '^[[:space:]]*append root=@@ROOT@@ rootwait ro ' "$TOP/scripts/build-rootfs.sh"; then
+	echo '  ok   the SD card is handed over read-only, so root gets fsck-ed'
+else
+	echo '  FAIL extlinux.conf does not hand the root filesystem over read-only'; fail=1
+fi
 
 log "u-boot overlay"
 ubt="$BOARD_DIR/uboot/tree"

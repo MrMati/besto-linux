@@ -99,6 +99,16 @@ like any other library:
 `rknpu-info` on the board prints the driver version, NPU clock, load, SoC
 temperature and which runtime is installed.
 
+The runtime's weights and feature maps come out of Rockchip's own dma-heap, and
+the kernel parameter that sizes it is **`rk_dma_heap_cma=`**, not the generic
+`cma=`. `RK_DMA_HEAP_SIZE` in `board.env` sets it (64 MB by default, against a
+32 MB driver default). `cma=` is not a synonym: it sizes an area nothing on this
+image allocates from, and on a `CMA_INACTIVE` kernel like `rv1106_defconfig` it
+reserves nothing at all and leaves a memblock stack dump in the boot log on the
+way past. `rv1106_defconfig` also means the heap is carved out of the 256 MB
+rather than lent to the page allocator, so the size is a straight trade against
+userspace memory: 64 MB here leaves ~188 MB.
+
 [`npu/uclibc-ctype-compat.c`]: npu/uclibc-ctype-compat.c
 
 ## Build
