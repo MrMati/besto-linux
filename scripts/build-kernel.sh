@@ -47,6 +47,13 @@ required=(
 	CONFIG_ROCKCHIP_RKNPU_DMA_HEAP=y
 	CONFIG_DMABUF_HEAPS_ROCKCHIP_CMA_HEAP=y
 	CONFIG_CGROUPS=y
+	# rv1106_defconfig explicitly disables this one, so it only ever comes
+	# from the fragment. Without it flock() is ENOSYS and POSIX locks are
+	# EACCES, which takes out systemd-sysusers, cron, udev and agetty.
+	CONFIG_FILE_LOCKING=y
+	# No RNG means userspace blocks on getrandom() until the CRNG is seeded
+	# from jitter alone, which on this board is minutes.
+	CONFIG_HW_RANDOM_ROCKCHIP=y
 	CONFIG_DEVTMPFS_MOUNT=y
 	CONFIG_EXT4_FS=y
 	CONFIG_ZRAM=y
