@@ -29,24 +29,43 @@ if [ -f "$target/etc/os-release.luckfox" ]; then
 	rm -f "$target/etc/os-release.luckfox"
 fi
 
-# An empty machine-id makes systemd generate a fresh one on first boot, so
-# every flashed card is not the same host as far as the network is concerned.
-: > "$target/etc/machine-id"
+# Every flashed card must not be the same host as far as the network is
+# concerned, so the machine ID is generated on the board rather than baked in.
+#
+# The magic word is "uninitialized", not an empty file. Both make systemd
+# generate an ID, but only this one also marks the boot as a first boot: with
+# an empty file systemd logs "Initializing machine ID from random generator"
+# and leaves ConditionFirstBoot=yes unsatisfied, which silently skips
+# sshd-keygen.service and every other unit that only ever runs once.
+echo uninitialized > "$target/etc/machine-id"
 
 # ---------------------------------------------------------------- accounts ---
+hash=""
 if [ -n "$LUCKFOX_ROOT_PASSWORD" ]; then
 	say "root password set (change it: passwd)"
 	hash="$(openssl passwd -6 "$LUCKFOX_ROOT_PASSWORD")"
-	# Field 2 of the root line in /etc/shadow.
-	awk -v h="$hash" -F: 'BEGIN{OFS=":"} $1=="root"{$2=h} {print}' \
-		"$target/etc/shadow" > "$target/etc/shadow.new"
-	mv "$target/etc/shadow.new" "$target/etc/shadow"
-	chmod 640 "$target/etc/shadow"
 	mkdir -p "$target/etc/ssh/sshd_config.d"
 	echo "PermitRootLogin yes" > "$target/etc/ssh/sshd_config.d/10-luckfox.conf"
 else
 	say "root account left locked; provision an SSH key to log in"
 fi
+
+# Field 2 of the root line in /etc/shadow is the hash; field 3 is the day the
+# password was last changed. Debian sets field 3 to the day the image was
+# built, and the board has no RTC, so the first boot comes up at systemd's
+# built-in epoch -- months before the image was built as far as the clock is
+# concerned. shadow then decides the password was changed in the future and
+# every login prints "account root has password changed in future". Pinning
+# the field to 1 (2 Jan 1970) is in the past under any clock; 0 is not usable
+# because it means "must change password at next login".
+awk -v h="$hash" -F: 'BEGIN{OFS=":"} $1=="root"{if (h != "") $2=h; $3=1} {print}' \
+	"$target/etc/shadow" > "$target/etc/shadow.new"
+mv "$target/etc/shadow.new" "$target/etc/shadow"
+# Rewriting through a temporary file loses root:shadow, and unix_chkpwd is
+# setgid shadow precisely so that unprivileged password checks can read this
+# file. 0640 root:root silently breaks authentication for everyone but root.
+chmod 640 "$target/etc/shadow"
+chown "0:$(awk -F: '$1=="shadow"{print $3}' "$target/etc/group")" "$target/etc/shadow"
 
 # The host keys must be unique per board, so generate them on first boot
 # instead of baking them into the image.

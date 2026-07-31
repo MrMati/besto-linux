@@ -14,7 +14,103 @@
 	};
 };
 
+/*
+ * fdtgrep strips every node that is not marked, so anything the SPL touches
+ * has to be marked here -- rv1106.dtsi carries no bootph properties of its
+ * own, and neither does the upstream Pico Mini B. Leaving a node out is not a
+ * missing-node error at runtime: the phandle that points at it dangles, and
+ * the driver that follows it fails somewhere much less obvious.
+ *
+ * The CRU is the one that matters, because both storage drivers give up
+ * without their clocks. Boot chain in the NAND, before this node existed:
+ *
+ *   Trying to boot from SPI NAND
+ *   Could not get clock for spi@ffac0000: -22
+ *   SPI NAND probe failed.
+ *   Trying to boot from MMC1
+ *   spl: could not initialize mmc. error: -22
+ *   SPL: failed to boot from all boot devices
+ *
+ * -22 is clk_get_by_index() resolving a phandle into a devicetree that has no
+ * clock-controller@ff3a0000 in it. rockchip_sfc bails in of_to_plat() and
+ * rockchip_dwmmc_probe() bails on "ciu", so the SPL cannot read U-Boot proper
+ * off either device.
+ */
+
+&cru {
+	bootph-all;
+};
+
+/* The CRU's rockchip,grf, and grf_cru for the sdmmc drive/sample clocks. */
+&grf {
+	bootph-all;
+};
+
 &sdmmc {
 	bootph-pre-ram;
 	bootph-some-ram;
+};
+
+/*
+ * Pin configuration is not load-bearing in the same way -- a failed
+ * pinctrl_select_state() is only logged -- but with these the SPL muxes the
+ * pins it uses itself, instead of inheriting whatever the BootROM left behind
+ * while it was hunting for a boot device.
+ */
+&pinctrl {
+	bootph-all;
+};
+
+&ioc {
+	bootph-all;
+};
+
+&pmuioc {
+	bootph-all;
+};
+
+&uart2m1_xfer {
+	bootph-all;
+};
+
+&fspi_pins {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&fspi_cs0 {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&sdmmc0_bus4 {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&sdmmc0_clk {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&sdmmc0_cmd {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&sdmmc0_det {
+	bootph-pre-ram;
+	bootph-some-ram;
+};
+
+&pcfg_pull_none {
+	bootph-all;
+};
+
+&pcfg_pull_up {
+	bootph-all;
+};
+
+&pcfg_pull_up_drv_level_2 {
+	bootph-all;
 };

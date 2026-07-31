@@ -151,6 +151,20 @@ scripts/flash.sh nand            # write idbloader + u-boot into the NAND
 scripts/flash.sh sd /dev/sdX     # asks you to confirm the device name
 ```
 
+The BOOT button is only needed the first time. Once this U-Boot is on the
+board, `run maskrom` at its prompt sets the BootROM's download flag and resets
+straight back into maskrom mode, so a reflash is one command instead of a power
+cycle:
+
+```
+=> run maskrom
+```
+
+That is `mw.l 0xff020200 0xef08a53c; reset` spelled out, which is what U-Boot
+itself does when it sees the download key held. The flag lives in an OS_REG
+that a warm reset does not clear, and the BootROM reads it before it touches
+any flash device; if it ever ignores the flag, U-Boot simply comes back up.
+
 To run entirely out of the NAND instead, `scripts/flash.sh nand --with-rootfs`
 writes the UBI image too; U-Boot falls back to it when no card has a bootflow.
 
@@ -179,8 +193,11 @@ To cover that step too, `scripts/flash.sh ram --from-card` sends the SPL
 without its payload. With nothing to boot from RAM the SPL walks
 `u-boot,spl-boot-order` for real: SPI NAND first, where a stock board's vendor
 image is a Rockchip FIT that this SPL rejects, and then sector 0x800 of the
-card. From the U-Boot prompt you can check that byte-for-byte before trusting
-it, since a bad offset here is silent:
+card. Falling through like that only works because `SPL_RAW_IMAGE_SUPPORT` is
+off: with it on, the RAM loader takes the empty payload for a headerless
+U-Boot, "succeeds", and jumps into whatever DRAM happened to contain. From the
+U-Boot prompt you can check the card byte-for-byte before trusting it, since a
+bad offset here is silent:
 
 ```
 => mmc dev 1 && mmc read 0x800000 0x800 0x400 && iminfo 0x800000
@@ -197,6 +214,7 @@ board/luckfox-pico-max/
   kernel/dts/                  rv1106g3-luckfox-pico-max.dts
   kernel/config/               the fragment merged over rv1106_defconfig
   uboot/tree/                  files copied verbatim into the U-Boot checkout
+  uboot/patches/               the few fixes that touch files we do not own
 rootfs/
   packages/                    minimal / standard / dev
   overlay/                     everything shipped into /
@@ -231,10 +249,18 @@ config fragments survive `merge_config.sh` and `olddefconfig` with every one of
 their assignments intact, and `librknnmrt.so.2` links clean with the full
 RKNN API exported and no text relocations.
 
-Not yet verified on hardware — the U-Boot RV1106 series is upstream-tested on a
-Pico Mini B (RV1103, 64 MB), and the Pico Max board support here is new. If you
-boot it, the interesting failure points are the SPL finding U-Boot in NAND, the
-DDR size handoff, and the `sdmmc` card-detect pin.
+Verified on a board: both `scripts/flash.sh ram` and the boot chain in the
+NAND bring a Pico Max up in U-Boot proper with the right 256 MB of DRAM, the
+SPL reads U-Boot out of the SPI NAND, the environment loads, standard boot
+finds the `extlinux` bootflow on the card, and the kernel comes up and mounts
+the ext4 root by PARTUUID. Userspace past `init` has not been exercised yet.
+
+Getting there took the SPL devicetree seriously: nothing in `rv1106.dtsi` is
+marked `bootph-*`, so fdtgrep was handing the SPL a devicetree with no CRU in
+it and both storage drivers failed with `-22` on a clock they could not
+resolve. The `-u-boot.dtsi` here names the CRU, the GRF, the pinctrl node and
+the pin groups the SPL uses, which is what `rk356x-u-boot.dtsi` does and what
+the upstream Pico Mini B (RV1103, 64 MB, SPI NAND only) is missing.
 
 ## Credits
 

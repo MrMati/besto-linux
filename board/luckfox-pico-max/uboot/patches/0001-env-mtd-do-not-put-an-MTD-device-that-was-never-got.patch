@@ -1,0 +1,49 @@
+From: luckfox-linux <build@localhost>
+Subject: [PATCH] env: mtd: do not put an MTD device that was never got
+
+env_mtd_load() jumps to a label that calls put_mtd_device() before
+mtd_env has been assigned, so when setup_mtd_device() fails the driver
+dereferences an uninitialised pointer:
+
+  Loading Environment from MTD... *** Warning - get_mtd_device_nm() failed
+  BUG at drivers/mtd/mtdcore.c:898/__put_mtd_device()!
+  BUG!
+  resetting ...
+
+setup_mtd_device() has already called env_set_default() at that point, so
+the failure is meant to be recoverable: U-Boot should come up on the
+built-in environment. Instead the board resets, and does so on every
+boot, which turns a missing or unreadable env partition into an
+unbootable system.
+
+Free the buffer and return the error without touching the device.
+
+Signed-off-by: luckfox-linux <build@localhost>
+---
+ env/mtd.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/env/mtd.c b/env/mtd.c
+index b26ee809..6e6ba2c7 100644
+--- a/env/mtd.c
++++ b/env/mtd.c
+@@ -157,7 +157,7 @@ static int env_mtd_load(void)
+ 
+ 	ret = setup_mtd_device(&mtd_env);
+ 	if (ret)
+-		goto out;
++		goto out_free;
+ 
+ 	sect_size = mtd_env->erasesize;
+ 
+@@ -192,6 +192,7 @@ static int env_mtd_load(void)
+ out:
+ 	put_mtd_device(mtd_env);
+ 
++out_free:
+ 	free(buf);
+ 
+ 	return ret;
+-- 
+2.43.0
+
