@@ -11,7 +11,7 @@ pkgs=(
 	# u-boot binman/tooling
 	uuid-dev liblz4-tool lz4 zstd
 	# rootfs
-	mmdebstrap qemu-user-static binfmt-support debian-archive-keyring
+	mmdebstrap qemu-user-static binfmt-support arch-test debian-archive-keyring
 	# images
 	gdisk e2fsprogs dosfstools mtd-utils util-linux fdisk
 	# misc

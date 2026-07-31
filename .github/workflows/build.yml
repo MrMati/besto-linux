@@ -118,7 +118,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            mmdebstrap qemu-user-static binfmt-support debian-archive-keyring \
+            mmdebstrap qemu-user-static binfmt-support arch-test debian-archive-keyring \
             gdisk e2fsprogs mtd-utils zstd fdisk openssl
       - uses: actions/download-artifact@v4
         with: { name: u-boot, path: out }
