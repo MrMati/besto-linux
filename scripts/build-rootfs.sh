@@ -11,7 +11,7 @@
 
 . "$(dirname "$0")/lib.sh"
 
-need mmdebstrap
+need mmdebstrap readelf
 elevate "$@"
 
 if [ "$(hostarch_deb)" != "$ROOTFS_ARCH" ]; then
@@ -59,8 +59,15 @@ tar -C "$TOP/rootfs/overlay" -cf - . | tar -C "$ovl" -xf -
 tar -C "$OUT/npu-staging"   -cf - . | tar -C "$ovl" -xf -
 
 # Kernel modules and the devicetree/kernel the bootloader will read.
-mkdir -p "$ovl/lib/modules" "$ovl/boot"
-tar -C "$OUT/modules/lib/modules" -cf - . | tar -C "$ovl/lib/modules" -xf -
+#
+# The modules go to usr/lib/modules, not lib/modules. Debian is merged-usr, so
+# /lib in the rootfs is a symlink to usr/lib, and GNU tar unpacking a plain
+# lib/ directory over it deletes the symlink and puts a real directory there --
+# taking /lib/systemd, /lib/ld-linux-armhf.so.3 and the rest of userspace out
+# of reach without touching a single file. The hook below extracts with
+# --keep-directory-symlink so this cannot happen again by accident.
+mkdir -p "$ovl/usr/lib/modules" "$ovl/boot"
+tar -C "$OUT/modules/lib/modules" -cf - . | tar -C "$ovl/usr/lib/modules" -xf -
 cp -f "$OUT/$KERNEL_IMAGE"      "$ovl/boot/$KERNEL_IMAGE"
 cp -f "$OUT/$KERNEL_DTS.dtb"    "$ovl/boot/$KERNEL_DTS.dtb"
 
@@ -107,7 +114,7 @@ cat > "$hookdir/customize" <<HOOK
 set -eu
 target="\$1"
 
-tar -C "$ovl" -cf - . | tar -C "\$target" -xf -
+tar -C "$ovl" -cf - . | tar -C "\$target" --keep-directory-symlink -xf -
 
 . "$TOP/rootfs/hooks/customize.sh"
 HOOK
@@ -125,6 +132,28 @@ mmdebstrap \
 	--components=main,contrib,non-free-firmware \
 	--customize-hook="$hookdir/customize \$1" \
 	"$ROOTFS_SUITE" "$rootdir" "$ROOTFS_MIRROR"
+
+# The kernel's verdict on a rootfs is one line long -- "No working init found"
+# -- and by then it has cost a card write and a reboot, so resolve init here.
+#
+# Both halves matter. The symlink chain is the obvious one; the ELF
+# interpreter is the one that bites, because every dynamically linked binary
+# in an armhf rootfs asks for /lib/ld-linux-armhf.so.3 by that exact path. Lose
+# the merged-usr /lib -> usr/lib symlink and the loader goes with it: execve
+# fails for init, for /bin/sh, for everything the kernel tries, while each
+# individual file is still sitting there intact.
+init="$(readlink -f -- "$rootdir/sbin/init" 2>/dev/null || true)"
+case "$init" in
+"$rootdir"/*) [ -x "$init" ] || die "rootfs: /sbin/init resolves to ${init#$rootdir}, which is not executable" ;;
+"")           die "rootfs: /sbin/init does not resolve to anything" ;;
+*)            die "rootfs: /sbin/init resolves outside the rootfs ($init)" ;;
+esac
+
+interp="$(readelf -p .interp "$init" 2>/dev/null | awk '$0 ~ /\// {print $NF; exit}')"
+[ -n "$interp" ] || die "rootfs: cannot read the ELF interpreter of ${init#$rootdir}"
+[ -e "$rootdir$interp" ] \
+	|| die "rootfs: ${init#$rootdir} needs $interp, which is not in the rootfs"
+log "init: ${init#$rootdir} via $interp"
 
 size="$(du -sm "$rootdir" | cut -f1)"
 log "rootfs built: ${size} MiB at $rootdir"
