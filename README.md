@@ -99,6 +99,17 @@ like any other library:
 `rknpu-info` on the board prints the driver version, NPU clock, load, SoC
 temperature and which runtime is installed.
 
+The runtime's weights and feature maps come out of Rockchip's own dma-heap, and
+the kernel parameter that sizes it is **`rk_dma_heap_cma=`**, not the generic
+`cma=`. `RK_DMA_HEAP_SIZE` in `board.env` sets it, and 32 MB is the default here
+as well as the driver's. `cma=` is not a synonym: it sizes an area nothing on
+this image allocates from, and on a `CMA_INACTIVE` kernel like
+`rv1106_defconfig` it reserves nothing at all and leaves a memblock stack dump
+in the boot log on the way past. `rv1106_defconfig` also means the heap is
+carved out of the 256 MB rather than lent to the page allocator, so raising it
+is a straight trade against userspace memory: 32 MB leaves ~220 MB, 64 MB leaves
+~188 MB.
+
 [`npu/uclibc-ctype-compat.c`]: npu/uclibc-ctype-compat.c
 
 ## Build
@@ -180,7 +191,13 @@ To run entirely out of the NAND instead, `scripts/flash.sh nand --with-rootfs`
 writes the UBI image too; U-Boot falls back to it when no card has a bootflow.
 
 First boot: console on **UART2, 115200 8N1**, root password `luckfox` (change
-it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget.
+it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget. The card is
+handed over read-only so `systemd-fsck-root` gets to run, then remounted `rw`
+from `/etc/fstab`; the partition and filesystem grow to fill the card.
+
+Debian's desktop-sized housekeeping is masked, not deleted: `apt-daily`,
+`apt-daily-upgrade`, `e2scrub`, `fstrim` and `dpkg-db-backup` do not run on
+their own. `systemctl unmask` whichever you want back.
 
 ### Trying it without writing to the NAND
 

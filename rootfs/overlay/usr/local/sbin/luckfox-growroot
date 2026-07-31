@@ -1,19 +1,26 @@
 #!/bin/sh
 # The SD image is built just big enough to hold the rootfs so it writes fast.
 # On first boot, expand the partition and the filesystem to fill the card.
+#
+# Every step used to end in `|| true` and the done-marker was written whatever
+# happened, so a board that failed to grow looked exactly like one that had
+# grown, and never tried again. Now the marker is the last thing that runs and
+# only runs on success: a failure is a failed unit in `systemctl --failed`, and
+# the next boot has another go.
 set -eu
 
-mkdir -p /var/lib/luckfox
 done_marker=/var/lib/luckfox/growroot-done
 
-root_src=$(findmnt -no SOURCE / || true)
+root_src=$(findmnt -no SOURCE /)
 case "$root_src" in
 /dev/mmcblk*p*)
-	disk=$(echo "$root_src" | sed 's/p[0-9]*$//')
-	part=$(echo "$root_src" | sed 's|.*p||')
+	disk=${root_src%p*}
+	part=${root_src##*p}
 	;;
 *)
-	# UBI, NFS, initramfs: nothing to grow.
+	# UBI, NFS, initramfs: nothing to grow, and nothing to retry either.
+	echo "root is $root_src, not a partition: nothing to grow"
+	mkdir -p "$(dirname "$done_marker")"
 	touch "$done_marker"
 	exit 0
 	;;
@@ -21,12 +28,20 @@ esac
 
 echo "growing $root_src (partition $part of $disk)"
 if command -v growpart >/dev/null 2>&1; then
-	growpart "$disk" "$part" || true
+	# 0 resized, 1 error, 2 nothing to do (already fills the disk).
+	growpart "$disk" "$part" || [ $? = 2 ]
 else
-	# sfdisk can move the end of the last partition in place.
-	echo ", +" | sfdisk --no-reread --force -N "$part" "$disk" || true
-	partx -u "$disk" 2>/dev/null || true
+	# sfdisk moves the end of the last partition in place. --no-tell-kernel
+	# because the BLKRRPART it would otherwise issue cannot succeed on a
+	# disk holding the mounted root -- it fails with EBUSY and prints "The
+	# kernel still uses the old table", which is alarming and untrue by the
+	# time partx has updated the one partition that changed.
+	echo ", +" | sfdisk --no-reread --no-tell-kernel --force -N "$part" "$disk"
+	partx -u "$disk"
 fi
-resize2fs "$root_src" || true
 
+# Online resize: / is already mounted rw by the time this unit runs.
+resize2fs "$root_src"
+
+mkdir -p "$(dirname "$done_marker")"
 touch "$done_marker"
