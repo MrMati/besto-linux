@@ -227,8 +227,8 @@ Two things in there matter more than they look:
 ## Status
 
 Verified in CI and locally: the devicetree compiles against Rockchip 6.6, the
-config fragment survives `merge_config.sh` with all 18 load-bearing symbols
-intact and the FIQ debugger off, and `librknnmrt.so.2` links clean with the full
+config fragments survive `merge_config.sh` and `olddefconfig` with every one of
+their assignments intact, and `librknnmrt.so.2` links clean with the full
 RKNN API exported and no text relocations.
 
 Not yet verified on hardware — the U-Boot RV1106 series is upstream-tested on a

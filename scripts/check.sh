@@ -64,17 +64,24 @@ else
 	echo '  FAIL &npu does not pin aclk_rknn to 500 MHz'; fail=1
 fi
 
-log "kernel config fragment"
-frag="$BOARD_DIR/kernel/config/glibc-distro.config"
-dupes="$(grep -oE '^(# )?CONFIG_[A-Z0-9_]+' "$frag" | sed 's/^# //' | sort | uniq -d)"
+log "kernel config fragments"
+# Match only real directives, not prose that happens to name a symbol: a
+# comment beginning "# CONFIG_FOO ..." is not the same thing as the kconfig
+# "# CONFIG_FOO is not set" that switches FOO off.
+frag_syms() {
+	sed -nE 's/^CONFIG_([A-Z0-9_]+)=.*$/\1/p; s/^# CONFIG_([A-Z0-9_]+) is not set$/\1/p' "$@"
+}
+frags=("$BOARD_DIR"/kernel/config/*.config)
+dupes="$(frag_syms "${frags[@]}" | sort | uniq -d)"
 if [ -n "$dupes" ]; then
-	echo "  FAIL duplicate symbols in the fragment:"; echo "$dupes" | sed 's/^/       /'; fail=1
+	echo "  FAIL a symbol is set in more than one place; the last fragment wins:"
+	echo "$dupes" | sed 's/^/       CONFIG_/'; fail=1
 else
-	echo "  ok   $(grep -c '^CONFIG_' "$frag") symbols, no duplicates"
+	echo "  ok   $(frag_syms "${frags[@]}" | wc -l) symbols across ${#frags[@]} fragments, no duplicates"
 fi
 # DRM would flip the RKNPU memory-manager choice away from the dma-heap path
 # that librknnmrt expects, and the RV1106 has no display engine anyway.
-if grep -qE '^CONFIG_DRM=y' "$frag"; then
+if grep -qE '^CONFIG_DRM=y' "${frags[@]}"; then
 	echo '  FAIL fragment enables DRM, which switches RKNPU to the DRM GEM backend'; fail=1
 else
 	echo '  ok   DRM stays off, RKNPU keeps the dma-heap backend'
