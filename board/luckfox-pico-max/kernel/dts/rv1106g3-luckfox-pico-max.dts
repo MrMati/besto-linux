@@ -47,20 +47,25 @@
 	};
 
 	/*
-	 * VDD_ARM is a PWM-controlled buck on PWM0. Without this the CPU is
-	 * stuck at whatever voltage the bootloader left behind, cpufreq cannot
-	 * scale past the boot OPP and the part runs hot at load. This is the
-	 * single most important node on the board which the LuckFox dropped to 
-	 * save 0.035$ per board.
+	 * VDD_ARM. Rockchip's reference design puts a PWM-controlled buck here
+	 * so that DVFS can drop the rail with the frequency and raise it for
+	 * the top bins; Luckfox left the buck off the Pico Max and fitted a
+	 * fixed 0.9 V supply instead.
+	 *
+	 * cpufreq still needs a regulator behind cpu-supply -- rockchip-cpufreq
+	 * refuses to probe without one -- so describe the rail as what it is.
+	 * A regulator-fixed must have min == max in 6.6, otherwise
+	 * of_get_fixed_voltage_config() rejects it as "specified with variable
+	 * voltages"; Luckfox's own 800000..1000000 node would not probe here.
+	 *
+	 * The consequence is in &cpu0_opp_table: every OPP above 1.2 GHz wants
+	 * more than 0.9 V and there is nothing to raise it with.
 	 */
 	vdd_arm: regulator-vdd-arm {
-		compatible = "pwm-regulator";
-		pwms = <&pwm0 0 5000 1>;
+		compatible = "regulator-fixed";
 		regulator-name = "vdd_arm";
-		regulator-min-microvolt = <724000>;
-		regulator-max-microvolt = <1078000>;
-		regulator-init-microvolt = <950000>;
-		regulator-settling-time-up-us = <250>;
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
 		regulator-always-on;
 		regulator-boot-on;
 	};
@@ -81,10 +86,35 @@
 
 &cpu0 {
 	cpu-supply = <&vdd_arm>;
+	/* cpufreq-dt registers the cpufreq cooling device off this. */
+	#cooling-cells = <2>;
 };
 
-&pwm0 {
-	status = "okay";
+/*
+ * rv1106.dtsi carries the SoC's full OPP table, up to 1.608 GHz. Everything
+ * from 1.296 GHz up asks for more than the 0.9 V this board's fixed rail
+ * supplies, and the OPP core would happily use them anyway: the fallback leg
+ * of regulator_set_voltage_triplet() asks for the OPP's u_volt_min (850 mV for
+ * every entry in this table), which a fixed 0.9 V rail satisfies. So the only
+ * thing keeping the CPU inside its voltage/frequency envelope is the table
+ * itself. Stop at 1.2 GHz, the fastest OPP that runs at 850 mV.
+ *
+ * The pvtpll properties go with them. PVTPLL calibration walks the rail up and
+ * down in 12.5 mV steps while watching the ring oscillator, to find the
+ * lowest voltage each >= 1.104 GHz OPP is stable at. With a rail that cannot
+ * move there is nothing to search, and rockchip_pvtpll_calibrate_opp() would
+ * still take the CPU to 1.104 GHz and rewrite the table's voltages on the way
+ * to giving up.
+ */
+&cpu0_opp_table {
+	/delete-property/ rockchip,pvtpll-avg-offset;
+	/delete-property/ rockchip,pvtpll-min-rate;
+	/delete-property/ rockchip,pvtpll-volt-step;
+
+	/delete-node/ opp-1296000000;
+	/delete-node/ opp-1416000000;
+	/delete-node/ opp-1512000000;
+	/delete-node/ opp-1608000000;
 };
 
 /* ------------------------------------------------------------------ NPU --- */
@@ -160,6 +190,22 @@
 
 &tsadc {
 	status = "okay";
+};
+
+/*
+ * rv1106.dtsi describes the trip points but binds no cooling device to them,
+ * so the passive trips did nothing and the only thermal response the SoC had
+ * was the critical trip at 115 C. Hand the CPU to the step_wise governor at
+ * the 85 C trip; it is the one cooling device this board has.
+ */
+&soc_thermal {
+	cooling-maps {
+		map0 {
+			trip = <&target>;
+			cooling-device = <&cpu0 THERMAL_NO_LIMIT THERMAL_NO_LIMIT>;
+			contribution = <1024>;
+		};
+	};
 };
 
 /* -------------------------------------------------------------- entropy --- */
