@@ -1,12 +1,4 @@
 #!/bin/sh
-# The SD image is built just big enough to hold the rootfs so it writes fast.
-# On first boot, expand the partition and the filesystem to fill the card.
-#
-# Every step used to end in `|| true` and the done-marker was written whatever
-# happened, so a board that failed to grow looked exactly like one that had
-# grown, and never tried again. Now the marker is the last thing that runs and
-# only runs on success: a failure is a failed unit in `systemctl --failed`, and
-# the next boot has another go.
 set -eu
 
 done_marker=/var/lib/luckfox/growroot-done

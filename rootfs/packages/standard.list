@@ -4,15 +4,11 @@ wget
 htop
 file
 rsync
-git
-tmux
 usbutils
 i2c-tools
 ethtool
 gpiod
-device-tree-compiler
 python3
-python3-venv
 bash-completion
 psmisc
 procps

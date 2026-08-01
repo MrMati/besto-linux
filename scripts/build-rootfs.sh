@@ -243,12 +243,7 @@ done
 # systemd-tmpfiles runs on every boot and owns some of /etc. Debian's
 # debian.conf has three L+ lines, and L+ means "delete whatever is there and
 # put a symlink here", so a file this overlay ships at one of those paths lives
-# exactly as long as it takes systemd-tmpfiles-setup.service to start. That is
-# how /etc/default/locale was lost: the overlay shipped a real file, tmpfiles
-# replaced it with a symlink to /etc/locale.conf, which nothing shipped, and
-# every login logged "pam_env(login:session): Unable to open env file". A file
-# that is deleted before userspace reads it is the worst kind of wrong, because
-# the build, the image and the git tree all look correct.
+# exactly as long as it takes systemd-tmpfiles-setup.service to start.
 while read -r path target; do
 	src="$ovl$path"
 	[ -e "$src" ] || [ -L "$src" ] || continue
@@ -273,15 +268,7 @@ case "$locale" in
 esac
 grep -q '^LANG=' "$locale" || die "rootfs: ${locale#$rootdir} sets no LANG"
 
-# The kernel's verdict on a rootfs is one line long -- "No working init found"
-# -- and by then it has cost a card write and a reboot, so resolve init here.
-#
-# Both halves matter. The symlink chain is the obvious one; the ELF
-# interpreter is the one that bites, because every dynamically linked binary
-# in an armhf rootfs asks for /lib/ld-linux-armhf.so.3 by that exact path. Lose
-# the merged-usr /lib -> usr/lib symlink and the loader goes with it: execve
-# fails for init, for /bin/sh, for everything the kernel tries, while each
-# individual file is still sitting there intact.
+
 init="$(readlink -f -- "$rootdir/sbin/init" 2>/dev/null || true)"
 case "$init" in
 "$rootdir"/*) [ -x "$init" ] || die "rootfs: /sbin/init resolves to ${init#$rootdir}, which is not executable" ;;

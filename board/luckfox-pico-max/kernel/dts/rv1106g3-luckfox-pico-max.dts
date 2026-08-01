@@ -8,8 +8,6 @@
  * not include rv1106-evb.dtsi or rv1106-ipc.dtsi, both of which turn it all on
  * and pull in a fixed set of sensors.
  *
- * Built against the Rockchip 6.6 vendor kernel (develop-6.6), which is the
- * newest tree with both RV1106 SoC support and the RKNPU driver.
  */
 
 /dts-v1/;
@@ -24,8 +22,7 @@
 
 	chosen {
 		/*
-		 * U-Boot replaces this wholesale via extlinux.conf or the
-		 * ubi_bootargs env var; it is only a sane default for the case
+         * sane default for the case
 		 * where the DTB is booted by hand.
 		 */
 		bootargs = "console=ttyS2,115200n8 rootwait";
@@ -53,7 +50,8 @@
 	 * VDD_ARM is a PWM-controlled buck on PWM0. Without this the CPU is
 	 * stuck at whatever voltage the bootloader left behind, cpufreq cannot
 	 * scale past the boot OPP and the part runs hot at load. This is the
-	 * single most important node on the board.
+	 * single most important node on the board which the LuckFox dropped to 
+	 * save 0.035$ per board.
 	 */
 	vdd_arm: regulator-vdd-arm {
 		compatible = "pwm-regulator";
@@ -92,24 +90,9 @@
 /* ------------------------------------------------------------------ NPU --- */
 
 &npu {
-	/*
-	 * rv1106.dtsi parks the NPU on the 420 MHz NPU PVTPLL. ACLK_NPU_ROOT is
-	 * a four-way mux with no divider behind it -- clk_500m_src, clk_300m_src,
-	 * pvtpll0 (410 MHz) and pvtpll1 (420 MHz) -- so the only rate above the
-	 * default is clk_500m_src, and 500 MHz is what the part is rated for.
-	 * Asking for anything else silently lands on one of the other three.
-	 */
 	assigned-clocks = <&cru ACLK_RKNN>;
 	assigned-clock-rates = <500000000>;
 
-	/*
-	 * rv1106.dtsi gives the NPU an interrupt but no interrupt-names, and
-	 * rknpu_register_irq() asks for "npu_irq" by name first. The 6.6 path
-	 * falls back to platform_get_irq(pdev, 0) and the NPU works, but not
-	 * before platform_get_irq_byname() has logged
-	 *   RKNPU ff660000.npu: error -ENXIO: IRQ npu_irq not found
-	 * at error level, which reads like a dead NPU and is not one.
-	 */
 	interrupt-names = "npu_irq";
 	status = "okay";
 };
@@ -181,14 +164,6 @@
 
 /* -------------------------------------------------------------- entropy --- */
 
-/*
- * The TRNG. rv1106.dtsi leaves it disabled, and with no other entropy source
- * on the board the CRNG never initialises: systemd-random-seed.service blocks
- * on getrandom(2) for its full 10 minute timeout on every boot, and everything
- * ordered after it waits with it. CONFIG_HW_RANDOM_ROCKCHIP is already in the
- * kernel fragment; the driver binds "rockchip,trngv1" and reports quality 999,
- * so simply turning the node on credits entropy early enough to unblock boot.
- */
 &rng {
 	status = "okay";
 };

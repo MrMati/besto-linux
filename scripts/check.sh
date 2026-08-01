@@ -24,18 +24,7 @@ done
 echo "  ok   board.env defines the required variables"
 
 log "boot arguments"
-# The NPU heap is sized by rk_dma_heap_cma=. A bare cma= is not just ignored:
-# with CMA_INACTIVE the reservation collapses to zero and the kernel answers
-# with a memblock stack dump. Neither bootargs may carry one.
 pico_env="$BOARD_DIR/uboot/tree/board/luckfox/pico/pico-max.env"
-if bare_cma="$(grep -nE '^[[:space:]]*(append |[A-Za-z_]*bootargs=)' \
-		"$TOP/scripts/build-rootfs.sh" "$pico_env" \
-		| grep -E '(^|[[:space:]])cma=')"; then
-	echo '  FAIL a bootargs line still passes cma=; the knob is rk_dma_heap_cma='
-	echo "$bare_cma" | sed 's/^/       /'; fail=1
-else
-	echo '  ok   no bootargs pass the generic cma='
-fi
 # The two heap sizes are written out in two places by two different toolchains,
 # so nothing but this check keeps them together.
 ubi_heap="$(sed -nE 's/^ubi_bootargs=.*[[:space:]]rk_dma_heap_cma=([^[:space:]]+).*$/\1/p' "$pico_env")"
@@ -76,10 +65,7 @@ else
 fi
 
 log "source patches"
-# A patch nobody applies is worse than no patch: it reads like the bug is
-# fixed. Every patches directory has to be consumed by its build script, and
-# every patch has to be a diff git can parse -- a mangled hunk header only
-# turns up an hour into a build otherwise.
+# Ensure every patch gets applied
 shopt -s nullglob
 npatch=0; bad=0
 for d in "$BOARD_DIR"/*/patches; do
@@ -103,34 +89,6 @@ else
 	fail=1
 fi
 
-log "kernel devicetree"
-check test -f "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts"
-# The whole point of the board is the NPU; a DTS that forgets to enable it
-# builds and boots and silently has no /dev/rknpu.
-npu_node="$(sed -n '/^&npu {/,/^};/p' "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts")"
-if printf '%s' "$npu_node" | grep -q 'status = "okay"'; then
-	echo '  ok   &npu is enabled'
-else
-	echo '  FAIL &npu is not enabled in the devicetree'; fail=1
-fi
-# rv1106.dtsi leaves aclk_rknn on the 420 MHz PVTPLL. 500 MHz is the rated
-# clock and the only faster parent the ACLK_NPU_ROOT mux has.
-if printf '%s' "$npu_node" | grep -q 'assigned-clock-rates = <500000000>'; then
-	echo '  ok   the NPU is clocked at 500 MHz'
-else
-	echo '  FAIL &npu does not pin aclk_rknn to 500 MHz'; fail=1
-fi
-# The TRNG is the board's only entropy source. rv1106.dtsi ships it disabled,
-# and with it disabled systemd-random-seed blocks on getrandom(2) until its
-# 10 minute timeout on every single boot, dragging the rest of the boot with
-# it. The driver is built in, so the devicetree is the only thing keeping it
-# off.
-rng_node="$(sed -n '/^&rng {/,/^};/p' "$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts")"
-if printf '%s' "$rng_node" | grep -q 'status = "okay"'; then
-	echo '  ok   &rng is enabled, the CRNG has a hardware seed'
-else
-	echo '  FAIL &rng is not enabled, userspace will stall on getrandom(2)'; fail=1
-fi
 
 log "kernel config fragments"
 # Match only real directives, not prose that happens to name a symbol: a

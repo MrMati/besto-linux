@@ -15,21 +15,17 @@
 need git make "${CROSS_COMPILE}gcc" bison flex python3 swig
 
 rkbin="$(fetch rkbin "$RKBIN_URL" "$RKBIN_REF")"
-ub="$(fetch u-boot "$UBOOT_URL" "$UBOOT_REF" "$UBOOT_BRANCH")"
+ub="$(fetch u-boot "$UBOOT_URL" "$UBOOT_REF")"
 
 ddr="$rkbin/$RKBIN_DDR_BIN"
 [ -f "$ddr" ] || die "DDR blob missing: $ddr"
 
 # --- board support ----------------------------------------------------------
 #
-# The RV1106 series upstream ships board/luckfox/pico with the Pico Mini B
+# The U-Boot Concept ships board/luckfox/pico with the Pico Mini B
 # (RV1103) only. Everything the Max needs is new files, except two: the SoC
 # Kconfig needs a target symbol, and MAINTAINERS wants the new defconfig
 # listed. Both are handled below so the overlay stays a pure file copy.
-#
-# Fixes to code we do not own go in uboot/patches as real patches, applied
-# before the overlay. fetch() resets the tree to the pin every time, so they
-# always apply to exactly the tree they were written against.
 
 shopt -s nullglob
 for p in "$BOARD_DIR"/uboot/patches/*.patch; do
@@ -71,10 +67,6 @@ grep -q luckfox-pico-max "$ub/board/luckfox/pico/MAINTAINERS" 2>/dev/null || \
 log "configuring u-boot ($UBOOT_DEFCONFIG)"
 make -C "$ub" O="$OUT/u-boot" CROSS_COMPILE="$CROSS_COMPILE" "$UBOOT_DEFCONFIG"
 
-# kconfig silently ignores a symbol it has never heard of, so a typo in the
-# defconfig -- CONFIG_ENV_MTD_NAME for CONFIG_ENV_MTD_DEV, say -- costs a board
-# bring-up round trip to find. Insist that every line we wrote survived into
-# .config with the value we asked for.
 log "verifying the defconfig took effect"
 python3 - "$ub/configs/$UBOOT_DEFCONFIG" "$OUT/u-boot/.config" <<-'PY'
 	import sys

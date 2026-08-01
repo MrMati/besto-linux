@@ -18,31 +18,19 @@ mkdir -p "$SRC" "$OUT" "$DL"
 
 # ---------------------------------------------------------------- sources ---
 #
-# Every upstream is pinned to an exact commit. Refresh them deliberately with
-# `make bump`, never implicitly.
+# Every upstream is pinned to an exact commit.
 
-# Mainline U-Boot plus the RV1103B/RV1103/RV1106 series from
+# Concept U-Boot received initial RV1106 + LuckFox support in July 2026
 # https://concept.u-boot.org/u-boot/u-boot/-/merge_requests/1147.
-#
-# That MR has been merged into the master branch of the GitLab instance it
-# lives on, which is *not* u-boot/u-boot: github.com/u-boot/u-boot master still
-# has no arch/arm/mach-rockchip/rv1106, no board/luckfox and no rv1106
-# defconfig, and no release tag contains them. So this stays pointed at the
-# GitLab tree. The `rocka` branch still exists and still points at the commit
-# below, which is an ancestor of that master with the RV1106 files unchanged
-# since; the branch is only a fallback for hosts that refuse a fetch by SHA.
 #
 # When the series reaches u-boot/u-boot, repoint UBOOT_URL at
 # https://github.com/u-boot/u-boot.git and drop UBOOT_REF to a release tag.
 UBOOT_URL="${UBOOT_URL:-https://concept.u-boot.org/u-boot/u-boot.git}"
-UBOOT_REF="${UBOOT_REF:-10c626b398b073f49294f7f4045d5b16892cb8b8}"
-UBOOT_BRANCH="${UBOOT_BRANCH:-rocka}"
+UBOOT_REF="${UBOOT_REF:-63746e0a413b868c2ff0fc5d921b0c8648a9603d}"
 
 # Rockchip's 6.6 vendor kernel. This is the newest tree that has both RV1106
 # SoC support and drivers/rknpu with a rockchip,rv1106-rknpu match. Mainline
-# Linux has no RV1106 support at all; the 5.10 tree in the Luckfox SDK does,
-# but it is four LTS releases behind and predates most of what a modern glibc
-# userspace assumes.
+# Linux has no RV1106 support at all
 KERNEL_URL="${KERNEL_URL:-https://github.com/rockchip-linux/kernel.git}"
 KERNEL_BRANCH="${KERNEL_BRANCH:-develop-6.6}"
 KERNEL_REF="${KERNEL_REF:-1ba51b059f25533c5529b7f68186190b47d6a7b3}"

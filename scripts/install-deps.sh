@@ -23,19 +23,8 @@ echo "installing: ${pkgs[*]}"
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends "${pkgs[@]}"
 
-# The maskrom USB tools are not packaged anywhere; point at them rather than
-# silently building a half-working flash path. `make images` needs none of them.
 command -v rkdeveloptool >/dev/null 2>&1 || cat <<'EOF'
 
 note: rkdeveloptool is not installed. flash.sh needs it to write the SPI NAND
-      over USB, and it can also run flash.sh ram:
-        https://github.com/rockchip-linux/rkdeveloptool
-EOF
-
-command -v rkusbboot >/dev/null 2>&1 || command -v rkflashtool >/dev/null 2>&1 || cat <<'EOF'
-
-note: neither rkusbboot nor rkflashtool is installed. flash.sh ram works
-      without them, via rkdeveloptool and a merged loader, but either one
-      sends the two maskrom images directly and is less fuss:
-        https://github.com/RadxaNaoki/rkusbboot
+      over USB:  https://github.com/rockchip-linux/rkdeveloptool
 EOF

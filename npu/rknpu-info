@@ -1,6 +1,6 @@
 #!/bin/sh
 # Report the state of the NPU: driver, clock, load and the runtime userspace
-# will actually load. Handy first thing to run after flashing.
+# will actually load.
 set -eu
 
 say() { printf '%-16s %s\n' "$1" "$2"; }
@@ -13,21 +13,20 @@ fi
 
 say "device" "/dev/rknpu ($(stat -c '%A %U:%G' /dev/rknpu))"
 
-for f in /proc/rknpu/version /sys/kernel/debug/rknpu/version; do
-	[ -r "$f" ] && { say "driver" "$(cat "$f")"; break; }
-done
+if [ -r /proc/rknpu/version ]; then
+	say "driver" "$(cat /proc/rknpu/version)"
+fi
 
-clk=$(cat /sys/kernel/debug/clk/aclk_rknn/clk_rate 2>/dev/null || true)
+clk=$(cat /proc/rknpu/freq 2>/dev/null || true)
 [ -n "$clk" ] && say "npu clock" "$((clk / 1000000)) MHz"
 
-for f in /proc/rknpu/load /sys/kernel/debug/rknpu/load; do
-	[ -r "$f" ] && { say "load" "$(cat "$f")"; break; }
-done
+if [ -r /proc/rknpu/load ]; then
+	say "load" "$(cat /proc/rknpu/load)"
+fi
 
 lib=$(ls /usr/lib/*/librknnmrt.so.2 2>/dev/null | head -1 || true)
 if [ -n "$lib" ]; then
-	ver=$(cat "$(dirname "$lib")/.rknnmrt-version" 2>/dev/null || echo unknown)
-	say "runtime" "$lib (rknpu2 $ver)"
+	say "runtime" "$lib"
 else
 	say "runtime" "not installed"
 fi
