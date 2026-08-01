@@ -9,10 +9,19 @@ set -eu
 
 G=/sys/kernel/config/usb_gadget/luckfox
 IFACE_ADDR=${USB_GADGET_ADDR:-172.32.0.93/24}
-# Locally administered MACs, stable across reboots so the host does not invent
-# a new interface name every time.
-MAC_DEV=${USB_GADGET_MAC_DEV:-2a:66:6c:66:78:01}
-MAC_HOST=${USB_GADGET_MAC_HOST:-2a:66:6c:66:78:02}
+
+# Locally administered MACs for the two ends of the NCM link. They have to be
+# stable across reboots, or the host invents a new interface name every time,
+# and they have to differ between boards, or two of these on one laptop are
+# indistinguishable. /proc/cpuinfo's Serial is a hash of the SoC's OTP unique
+# id and satisfies both; /etc/machine-id is the fallback for a kernel that does
+# not publish one.
+tail4=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo | tr -dc '0-9a-f' | tail -c 8)
+[ "${#tail4}" = 8 ] || tail4=$(tr -dc '0-9a-f' < /etc/machine-id 2>/dev/null | tail -c 8)
+[ "${#tail4}" = 8 ] || tail4=6c667801
+suffix=$(echo "$tail4" | sed 's/../&:/g; s/:$//')
+MAC_DEV=${USB_GADGET_MAC_DEV:-02:66:$suffix}
+MAC_HOST=${USB_GADGET_MAC_HOST:-02:67:$suffix}
 
 udc_name() { ls /sys/class/udc 2>/dev/null | head -1; }
 

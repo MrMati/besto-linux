@@ -1,0 +1,110 @@
+From: luckfox-linux <build@localhost>
+Subject: [PATCH] net: stmmac: dwmac-rk: derive a stable MAC address from the SoC id
+
+rk_get_eth_addr() keeps the board's MAC address in Rockchip vendor
+storage, a small reserved area at the end of the boot medium that the
+factory programs and rk_vendor_storage.ko reads back. A board that was
+never through Rockchip's provisioning, or that boots from a medium with
+no vendor partition on it, has nothing there:
+
+	rk_gmac-dwmac ffa80000.ethernet: rk_get_eth_addr: rk_vendor_read eth mac address failed (-1)
+	rk_gmac-dwmac ffa80000.ethernet: rk_get_eth_addr: generate random eth mac address: be:69:2e:54:8a:23
+	rk_gmac-dwmac ffa80000.ethernet: rk_get_eth_addr: rk_vendor_write eth mac address failed (-1)
+
+The fallback is eth_random_addr() followed by an attempt to write the
+result back, and on such a board the write fails for the same reason the
+read did. So the address is new on every boot: a fresh DHCP lease, a
+fresh entry in the server's table, a different address for anything that
+tracked the last one, and no way to reserve one.
+
+Every one of these SoCs does have something unique and permanent in it,
+though -- the 16-byte id in OTP that rockchip-cpuinfo already reads to
+publish /proc/cpuinfo's Serial. Take a MAC from that when the board asks
+for it, by naming the OTP id cell "soc-id" in the ethernet node:
+
+	&gmac {
+		nvmem-cells = <&otp_id>;
+		nvmem-cell-names = "soc-id";
+	};
+
+The id is neither a MAC nor an OUI, so it is hashed into the low four
+bytes and given a locally administered, unicast prefix rather than being
+copied in. The result is stable for the life of the chip, differs
+between chips, and differs between the MACs on one chip. Boards with
+working vendor storage are unaffected: it is still tried first, and
+boards that do not name the cell still get the old random address.
+
+Signed-off-by: luckfox-linux <build@localhost>
+---
+ drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c | 44 ++++++++++++++++++++++++++
+ 1 file changed, 44 insertions(+)
+
+diff --git a/drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c b/drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c
+index 4561737aa..0249998d2 100644
+--- a/drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c
++++ b/drivers/net/ethernet/stmicro/stmmac/dwmac-rk.c
+@@ -10,6 +10,7 @@
+ #include <linux/stmmac.h>
+ #include <linux/bitops.h>
+ #include <linux/clk.h>
++#include <linux/crc32.h>
+ #include <linux/phy.h>
+ #include <linux/phy/phy.h>
+ #include <linux/of_net.h>
+@@ -3254,6 +3255,42 @@ int dwmac_rk_get_phy_interface(struct stmmac_priv *priv)
+ }
+ EXPORT_SYMBOL(dwmac_rk_get_phy_interface);
+ 
++/*
++ * Derive a MAC address from the SoC's OTP unique id, for boards that have no
++ * vendor storage to keep one in. The id is not a MAC and is not an OUI, so
++ * hash it down to the low four bytes and put the result under a locally
++ * administered prefix; the address is then stable for the life of the chip
++ * and distinct between chips, which is all the caller wanted.
++ */
++static int rk_soc_id_eth_addr(struct device *dev, int id, unsigned char *addr)
++{
++	struct nvmem_cell *cell;
++	unsigned char *soc_id;
++	size_t len;
++	u32 hash;
++
++	cell = nvmem_cell_get(dev, "soc-id");
++	if (IS_ERR(cell))
++		return PTR_ERR(cell);
++
++	soc_id = nvmem_cell_read(cell, &len);
++	nvmem_cell_put(cell);
++	if (IS_ERR(soc_id))
++		return PTR_ERR(soc_id);
++
++	hash = crc32(0, soc_id, len);
++	kfree(soc_id);
++
++	addr[0] = 0x02;		/* unicast, locally administered */
++	addr[1] = id;		/* one address per MAC on the SoC */
++	addr[2] = hash >> 24;
++	addr[3] = hash >> 16;
++	addr[4] = hash >> 8;
++	addr[5] = hash;
++
++	return 0;
++}
++
+ static void rk_get_eth_addr(void *priv, unsigned char *addr)
+ {
+ 	struct rk_priv_data *bsp_priv = priv;
+@@ -3274,6 +3311,13 @@ static void rk_get_eth_addr(void *priv, unsigned char *addr)
+ 	    !is_valid_ether_addr(&ethaddr[id * ETH_ALEN])) {
+ 		dev_err(dev, "%s: rk_vendor_read eth mac address failed (%d)\n",
+ 			__func__, ret);
++
++		if (!rk_soc_id_eth_addr(dev, id, addr)) {
++			dev_info(dev, "%s: mac address from soc id: %pM\n",
++				 __func__, addr);
++			goto out;
++		}
++
+ 		eth_random_addr(&ethaddr[id * ETH_ALEN]);
+ 		memcpy(addr, &ethaddr[id * ETH_ALEN], ETH_ALEN);
+ 		dev_err(dev, "%s: generate random eth mac address: %pM\n", __func__, addr);

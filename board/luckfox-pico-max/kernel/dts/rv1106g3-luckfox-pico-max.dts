@@ -163,8 +163,24 @@
 
 /* ------------------------------------------------------------- ethernet --- */
 
-/* 100M, integrated PHY. MAC address comes from the OTP via nvmem. */
+/*
+ * 100M, integrated PHY.
+ *
+ * There is no MAC address anywhere on this board to read. dwmac-rk keeps one
+ * in Rockchip vendor storage, a reserved area at the end of the boot medium
+ * that the factory programs; nothing ever programmed this one, and an SD card
+ * written by mk-image.sh has no such area at all. The driver's answer to that
+ * was eth_random_addr(), so the board took a new MAC -- and a new DHCP lease
+ * -- on every boot.
+ *
+ * Name the OTP's 16-byte unique id, the same cell rockchip-cpuinfo hashes into
+ * /proc/cpuinfo's Serial, and the patched driver derives a locally administered
+ * address from it: stable for the life of the chip, distinct between chips.
+ * kernel/patches/0003 has the details.
+ */
 &gmac {
+	nvmem-cells = <&otp_id>;
+	nvmem-cell-names = "soc-id";
 	status = "okay";
 };
 
@@ -183,8 +199,27 @@
 	status = "okay";
 };
 
+/*
+ * The Type-C port is the board's only USB port and its power inlet, and the
+ * connector has no ID pin -- there is no CC controller behind it either, just
+ * a socket wired to the SoC's one USB 2.0 OTG controller.
+ *
+ * dr_mode = "otg" therefore does not mean what it looks like it means. With no
+ * extcon to consult, dwc3 falls back to the OTG block's CONIDSTS bit, which
+ * follows the PHY's iddig input, which nothing on this board drives; it reads
+ * as grounded, dwc3 concludes it is the A-device and brings up xHCI. The port
+ * then has no VBUS to offer a downstream device and no UDC for a gadget to
+ * bind to, so it does nothing in either direction -- and usb_add_hcd() offers
+ * the PHY PHY_MODE_USB_HOST_SS on the way past, which
+ * rockchip_usb2phy_set_mode() does not handle, hence "illegal mode" in dmesg.
+ *
+ * Peripheral is what the hardware is, and is what Luckfox's own devicetree
+ * says. It gives the gadget in luckfox-usb-gadget.service a UDC to bind to.
+ * Set this to "host" instead if you power the board through the pin header and
+ * want to plug devices into the Type-C.
+ */
 &usbdrd_dwc3 {
-	dr_mode = "otg";
+	dr_mode = "peripheral";
 	status = "okay";
 };
 

@@ -1,0 +1,43 @@
+From: luckfox-linux <build@localhost>
+Subject: [PATCH] phy: rockchip: inno-usb2: do not demand a parent interrupt
+
+The probe takes the muxed per-phy interrupt with platform_get_irq(),
+which logs an error when the devicetree does not have one:
+
+	rockchip-usb2phy ff3e0000.usb2-phy: error -ENXIO: IRQ index 0 not found
+
+Not having one is legitimate. SoCs that route every port's id, bvalid
+and linestate events through a single line describe it on the usb2-phy
+node; the rest, the RV1106 among them, give each port its own
+interrupts, which rockchip_usb2phy_port_irq_init() picks up from the
+port's own node. Both are correct, and the driver already treats the
+muxed line as optional -- every use of rphy->irq is guarded by
+`rphy->irq > 0`.
+
+Ask with platform_get_irq_optional(), which returns the same -ENXIO
+without printing anything.
+
+Signed-off-by: luckfox-linux <build@localhost>
+---
+ drivers/phy/rockchip/phy-rockchip-inno-usb2.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/phy/rockchip/phy-rockchip-inno-usb2.c b/drivers/phy/rockchip/phy-rockchip-inno-usb2.c
+index 23c707be6..3dc434316 100644
+--- a/drivers/phy/rockchip/phy-rockchip-inno-usb2.c
++++ b/drivers/phy/rockchip/phy-rockchip-inno-usb2.c
+@@ -2494,7 +2494,13 @@ static int rockchip_usb2phy_probe(struct platform_device *pdev)
+ 	rphy->chg_state = USB_CHG_STATE_UNDEFINED;
+ 	rphy->chg_type = POWER_SUPPLY_TYPE_UNKNOWN;
+ 	rphy->edev_self = false;
+-	rphy->irq = platform_get_irq(pdev, 0);
++	/*
++	 * Optional: SoCs that mux every port's interrupts into one line put it
++	 * here, the rest (RV1106 among them) describe them per port instead.
++	 * Everything below tests rphy->irq before using it, so ask for it in a
++	 * way that does not log an error when it is legitimately absent.
++	 */
++	rphy->irq = platform_get_irq_optional(pdev, 0);
+ 	platform_set_drvdata(pdev, rphy);
+ 
+ 	if (!phy_cfgs)

@@ -198,15 +198,17 @@ Upstreams are pinned to exact commits in `scripts/lib.sh`. Nothing floats.
 
 Kernel boots cleanly, userspace starts green, NPU inference works right away.
 
+The Ethernet MAC is `02:00:xx:xx:xx:xx`, derived from the SoC's OTP id, so it
+is the same address on every boot and the same board keeps its DHCP lease. The
+Type-C port is a peripheral: `luckfox-usb-gadget.service` binds NCM + ACM to it
+and the board answers on `172.32.0.93`. Both of those took a devicetree change
+and a kernel patch; `&gmac` and `&usbdrd_dwc3` in the DTS say why.
+
 Wrong on a booted board, and not fixed yet:
 
-- the Ethernet MAC is random on every boot (`rk_vendor_read eth mac address
-  failed`), so the board takes a new DHCP lease each time.
-- the USB gadget never comes up: `phy ... illegal mode`, then `no UDC
-  available; is the controller in peripheral mode?`. The USB-C row in the
-  table above is what the hardware and the units are for, not something that
-  works today.
 - `Kernel memory protection not selected`.
+- the Type-C port is peripheral-only. Host mode is a one-word DTS change, but
+  the port is also the power inlet, so it is the wrong default.
 
 ## Credits
 
