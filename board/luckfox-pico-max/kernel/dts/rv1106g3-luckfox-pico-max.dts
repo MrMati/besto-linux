@@ -127,6 +127,13 @@
 	status = "okay";
 };
 
+/*
+ * Overclock the NPU to 594 MHz. Comment this line out for the 500 MHz the
+ * clock tree comes up on; it has to sit after &npu, because a later override
+ * wins. The dtsi explains what actually carries the rate.
+ */
+#include "rv1106g3-luckfox-pico-max-npu-594mhz.dtsi"
+
 /* ---------------------------------------------------------------- flash --- */
 
 &sfc {
