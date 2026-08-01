@@ -169,6 +169,23 @@ it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget. The card is
 handed over read-only so `systemd-fsck-root` gets to run, then remounted `rw`
 from `/etc/fstab`; the partition and filesystem grow to fill the card.
 
+The gadget is two functions on the one cable. `ssh root@172.32.0.93` over NCM,
+and a second login prompt on the ACM port, which the host sees as
+`/dev/ttyACM0`:
+
+```bash
+tio /dev/ttyACM0        # or: screen /dev/ttyACM0, picocom /dev/ttyACM0
+```
+
+The line settings do not matter: CDC ACM carries baud and parity as metadata
+and nothing on the board acts on them. `/dev/ttyACM0` is whichever board
+enumerated first, so with more than one plugged in, address them by the serial
+the gadget reports, which is the SoC's own and does not change:
+
+```bash
+tio /dev/serial/by-id/usb-Luckfox_Pico_Max_556abe2b7497589c-if02
+```
+
 Debian's desktop-sized housekeeping is masked, not deleted: `apt-daily`,
 `apt-daily-upgrade`, `e2scrub`, `fstrim` and `dpkg-db-backup` do not run on
 their own. `systemctl unmask` whichever you want back.
@@ -198,15 +215,17 @@ Upstreams are pinned to exact commits in `scripts/lib.sh`. Nothing floats.
 
 Kernel boots cleanly, userspace starts green, NPU inference works right away.
 
+The Ethernet MAC is `02:00:xx:xx:xx:xx`, derived from the SoC's OTP id, so it
+is the same address on every boot and the same board keeps its DHCP lease. The
+Type-C port is a peripheral: `luckfox-usb-gadget.service` binds NCM + ACM to it
+and the board answers on `172.32.0.93`. Both of those took a devicetree change
+and a kernel patch; `&gmac` and `&usbdrd_dwc3` in the DTS say why.
+
 Wrong on a booted board, and not fixed yet:
 
-- the Ethernet MAC is random on every boot (`rk_vendor_read eth mac address
-  failed`), so the board takes a new DHCP lease each time.
-- the USB gadget never comes up: `phy ... illegal mode`, then `no UDC
-  available; is the controller in peripheral mode?`. The USB-C row in the
-  table above is what the hardware and the units are for, not something that
-  works today.
 - `Kernel memory protection not selected`.
+- the Type-C port is peripheral-only. Host mode is a one-word DTS change, but
+  the port is also the power inlet, so it is the wrong default.
 
 ## Credits
 
