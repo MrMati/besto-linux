@@ -2,13 +2,6 @@
 Description=USB gadget (NCM network + ACM serial) on the Type-C port
 After=systemd-modules-load.service
 ConditionPathIsDirectory=/sys/kernel/config
-
-# The ACM function on its own is a pipe with nothing on the far end: it gives
-# the board a /dev/ttyGS0 and the host a /dev/ttyACM*, and a host that opens it
-# sits looking at a blank screen. Put a login prompt there. Ordering matters --
-# serial-getty@.service is BindsTo=dev-ttyGS0.device, and the device node only
-# exists once `up` has created the function, which is also why `down` takes the
-# getty with it.
 Wants=serial-getty@ttyGS0.service
 Before=serial-getty@ttyGS0.service
 
