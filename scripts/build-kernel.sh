@@ -38,7 +38,9 @@ shopt -u nullglob
 # dropped in before configuring. Registering it in the Makefile keeps the
 # normal `make dtbs` target working.
 dtsdir="$k/arch/arm/boot/dts/rockchip"
-cp -f "$BOARD_DIR"/kernel/dts/*.dts "$dtsdir/"
+# .dts and .dtsi both: the board dts #includes its optional fragments by name,
+# and cpp resolves those against the directory it is compiling from.
+cp -f "$BOARD_DIR"/kernel/dts/*.dts* "$dtsdir/"
 if ! grep -q "$KERNEL_DTS.dtb" "$dtsdir/Makefile"; then
 	log "registering $KERNEL_DTS.dtb"
 	printf 'dtb-$(CONFIG_ARCH_ROCKCHIP) += %s.dtb\n' "$KERNEL_DTS" >> "$dtsdir/Makefile"

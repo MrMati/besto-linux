@@ -84,6 +84,13 @@ carved out of the 256 MB rather than lent to the page allocator, so raising it
 is a straight trade against userspace memory: 32 MB leaves ~220 MB, 64 MB leaves
 ~188 MB.
 
+The NPU runs at **594 MHz**, up from the 500 MHz the clock tree comes up on.
+That lives in its own devicetree fragment, `kernel/dts/*-npu-594mhz.dtsi`;
+comment its `#include` out of the board dts for 500 MHz. The rate does not
+actually belong to the NPU node (its ACLK is a gate on a mux with no divider,
+so the NPU is simply whatever `clk_500m_src` is, and 594 MHz is GPLL/2), which
+is what the fragment is there to explain.
+
 ## CPU frequency, and why it stops at 1.2 GHz
 
 The RV1106 is a 1.6 GHz part and `rv1106.dtsi` has the OPPs to prove it, but
@@ -171,7 +178,8 @@ their own. `systemctl unmask` whichever you want back.
 ```
 board/luckfox-pico-max/
   board.env                    every board-specific number, in one file
-  kernel/dts/                  rv1106g3-luckfox-pico-max.dts
+  kernel/dts/                  rv1106g3-luckfox-pico-max.dts, plus the
+                               optional fragments it #includes
   kernel/config/               the fragment merged over rv1106_defconfig
   kernel/patches/              the few fixes that touch files we do not own
   uboot/tree/                  files copied verbatim into the U-Boot checkout
