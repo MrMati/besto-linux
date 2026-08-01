@@ -20,6 +20,7 @@ make           # -> out/luckfox-pico-max-sdcard.img
 | **bootloader** | Mainline U-Boot with standard boot (`extlinux.conf`), not the 2017.09 vendor fork |
 | **NPU**        | `rknpu` built into the kernel, plus a **glibc-adapted `librknnmrt.so.2`** |
 | **memory**     | zram swap, tuned sysctls: a full systemd userspace idles around 45 MB of the 256 MB |
+| **cpufreq**    | `ondemand` over 408 MHz - 1.2 GHz, throttling to a cooling device at 85 C |
 | **storage**    | ext4 on microSD (grows to fill the card on first boot), or UBIFS in the 237 MB SPI NAND |
 | **access**     | serial on UART2, DHCP on Ethernet, and USB-C gadget (NCM network + ACM console) |
 
@@ -82,6 +83,30 @@ as well as the driver's. `rv1106_defconfig` also means the heap is
 carved out of the 256 MB rather than lent to the page allocator, so raising it
 is a straight trade against userspace memory: 32 MB leaves ~220 MB, 64 MB leaves
 ~188 MB.
+
+## CPU frequency, and why it stops at 1.2 GHz
+
+The RV1106 is a 1.6 GHz part and `rv1106.dtsi` has the OPPs to prove it, but
+those top bins need up to 1.0 V on VDD_ARM. Rockchip's reference design gets
+that from a PWM-controlled buck. Luckfox left the buck off the Pico Max and
+fitted a fixed 0.9 V rail, so **1.2 GHz is the fastest OPP this board can hold**:
+it is the last one specified at 850 mV. The devicetree deletes the four above
+it, because nothing else would: the fallback leg of
+`regulator_set_voltage_triplet()` asks for the OPP's *minimum* voltage, which is
+850 mV for every entry in the table, so a fixed 0.9 V rail "satisfies" 1.6 GHz
+just as readily as it satisfies 408 MHz. The OPP table is the only thing
+standing between the part and an undervolted 1.6 GHz.
+
+Two more things follow from the fixed rail. PVTPLL calibration is deleted with
+the OPPs: it exists to search for the lowest stable voltage per frequency, and
+there is nothing here to search. And DVFS is frequency-only, so the power
+savings are the dynamic ones and nothing else.
+
+Getting this far mostly needed `CONFIG_ROCKCHIP_OPP`. `rockchip-cpufreq` calls
+`rockchip_init_opp_info()` before it will register the `cpufreq-dt` device, and
+without that symbol it is a stub returning `-EOPNOTSUPP`. Nothing selects it,
+and `rv1106_defconfig` does not set it, so the driver failed at probe and the
+board had no `cpufreq` directory at all.
 
 ## Build
 
@@ -167,8 +192,6 @@ Kernel boots cleanly, userspace starts green, NPU inference works right away.
 
 Wrong on a booted board, and not fixed yet:
 
-- `rockchip-cpufreq: failed to get OPP table, error -95`. There is no CPU DVFS
-  and no thermal cooling device; the CPU stays on the OPP U-Boot left it at.
 - the Ethernet MAC is random on every boot (`rk_vendor_read eth mac address
   failed`), so the board takes a new DHCP lease each time.
 - the USB gadget never comes up: `phy ... illegal mode`, then `no UDC
