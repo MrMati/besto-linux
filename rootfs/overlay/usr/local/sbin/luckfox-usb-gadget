@@ -10,16 +10,19 @@ set -eu
 G=/sys/kernel/config/usb_gadget/luckfox
 IFACE_ADDR=${USB_GADGET_ADDR:-172.32.0.93/24}
 
-# Locally administered MACs for the two ends of the NCM link. They have to be
-# stable across reboots, or the host invents a new interface name every time,
-# and they have to differ between boards, or two of these on one laptop are
-# indistinguishable. /proc/cpuinfo's Serial is a hash of the SoC's OTP unique
-# id and satisfies both; /etc/machine-id is the fallback for a kernel that does
-# not publish one.
-tail4=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo | tr -dc '0-9a-f' | tail -c 8)
-[ "${#tail4}" = 8 ] || tail4=$(tr -dc '0-9a-f' < /etc/machine-id 2>/dev/null | tail -c 8)
-[ "${#tail4}" = 8 ] || tail4=6c667801
-suffix=$(echo "$tail4" | sed 's/../&:/g; s/:$//')
+# Everything identifying about this gadget hangs off the SoC's OTP unique id,
+# which /proc/cpuinfo publishes as Serial. It has to be stable across reboots,
+# or the host invents a new usb0 name and a new /dev/serial/by-id path every
+# time, and it has to differ between boards, or two of these on one laptop are
+# indistinguishable. /etc/machine-id is the fallback for a kernel that does not
+# publish a serial.
+soc_id=$(sed -n 's/^Serial[[:space:]]*:[[:space:]]*//p' /proc/cpuinfo | tr -dc '0-9a-f')
+[ "${#soc_id}" -ge 8 ] || soc_id=$(tr -dc '0-9a-f' 2>/dev/null < /etc/machine-id || true)
+[ "${#soc_id}" -ge 8 ] || soc_id=6c667801
+SERIAL=$(printf %s "$soc_id" | tail -c 16)
+
+# Locally administered, and the two ends differ in the second octet.
+suffix=$(printf %s "$soc_id" | tail -c 8 | sed 's/../&:/g; s/:$//')
 MAC_DEV=${USB_GADGET_MAC_DEV:-02:66:$suffix}
 MAC_HOST=${USB_GADGET_MAC_HOST:-02:67:$suffix}
 
@@ -40,11 +43,13 @@ up() {
 	echo 0x0100 > "$G/bcdDevice"
 
 	mkdir -p "$G/strings/0x409"
-	echo "Luckfox"      > "$G/strings/0x409/manufacturer"
-	echo "Pico Max"     > "$G/strings/0x409/product"
-	echo "$(cat /proc/sys/kernel/random/boot_id | tr -d - | cut -c1-16)" \
-	                    > "$G/strings/0x409/serialnumber"
+	echo "Luckfox"  > "$G/strings/0x409/manufacturer"
+	echo "Pico Max" > "$G/strings/0x409/product"
+	echo "$SERIAL"  > "$G/strings/0x409/serialnumber"
 
+	# Link order below is interface order on the wire: NCM takes 0 and 1, so
+	# the ACM control interface is 2 and the host's stable name for the tty
+	# is /dev/serial/by-id/usb-Luckfox_Pico_Max_$SERIAL-if02.
 	mkdir -p "$G/functions/ncm.usb0"
 	echo "$MAC_DEV"  > "$G/functions/ncm.usb0/dev_addr"
 	echo "$MAC_HOST" > "$G/functions/ncm.usb0/host_addr"

@@ -169,6 +169,23 @@ it), Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget. The card is
 handed over read-only so `systemd-fsck-root` gets to run, then remounted `rw`
 from `/etc/fstab`; the partition and filesystem grow to fill the card.
 
+The gadget is two functions on the one cable. `ssh root@172.32.0.93` over NCM,
+and a second login prompt on the ACM port, which the host sees as
+`/dev/ttyACM0`:
+
+```bash
+tio /dev/ttyACM0        # or: screen /dev/ttyACM0, picocom /dev/ttyACM0
+```
+
+The line settings do not matter: CDC ACM carries baud and parity as metadata
+and nothing on the board acts on them. `/dev/ttyACM0` is whichever board
+enumerated first, so with more than one plugged in, address them by the serial
+the gadget reports, which is the SoC's own and does not change:
+
+```bash
+tio /dev/serial/by-id/usb-Luckfox_Pico_Max_556abe2b7497589c-if02
+```
+
 Debian's desktop-sized housekeeping is masked, not deleted: `apt-daily`,
 `apt-daily-upgrade`, `e2scrub`, `fstrim` and `dpkg-db-backup` do not run on
 their own. `systemctl unmask` whichever you want back.
