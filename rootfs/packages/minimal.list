@@ -16,6 +16,7 @@ sudo
 less
 nano
 zstd
+unzip
 kmod
 e2fsprogs
 mtd-utils

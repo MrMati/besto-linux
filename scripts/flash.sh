@@ -22,14 +22,14 @@ sd)
 	if lsblk -no MOUNTPOINT "$dev" | grep -q .; then
 		die "$dev has mounted partitions; unmount them first"
 	fi
-	size_gb=$(( $(blockdev --getsize64 "$dev") / 1000000000 ))
+	size_gb=$(( $(sudo blockdev --getsize64 "$dev") / 1000000000 ))
 	echo "About to overwrite $dev ($(lsblk -dno MODEL,SIZE "$dev" | xargs), ${size_gb}GB)"
-	printf 'Type the device name again to confirm: '
+	printf 'Type Y/y to confirm: '
 	read -r confirm
-	[ "$confirm" = "$dev" ] || die "aborted"
+	[ "$confirm" = "Y" ] || [ "$confirm" = "y" ] || die "aborted"
 
 	log "writing $(basename "$img") to $dev"
-	dd if="$img" of="$dev" bs=4M conv=fsync status=progress
+	sudo dd if="$img" of="$dev" bs=4M conv=fsync status=progress
 	sync
 	log "done. The BootROM prefers the SPI NAND: if the board has a bootable"
 	log "image in NAND it will ignore the card. Use 'flash.sh nand' to put this"
