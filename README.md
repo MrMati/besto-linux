@@ -125,7 +125,7 @@ together.
 
 On the Linux side `CONFIG_OPTEE` gives `/dev/tee0` (clients) and
 `/dev/teepriv0` (supplicant); the standard rootfs profile ships Debian's
-`tee-supplicant` and `libteec1`, so the userspace half is ready the moment a
+`tee-supplicant` and `libteec2`, so the userspace half is ready the moment a
 TA needs it. The kernel's `psci { method = "smc" }` calls, which previously
 had no monitor to land in, are answered by OP-TEE's ARM32 PSCI backend.
 
