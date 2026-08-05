@@ -64,6 +64,34 @@ else
 	echo "  ok   the SD u-boot offset agrees between board.env and the defconfig"
 fi
 
+log "op-tee memory window"
+# One address, four files, three toolchains: OP-TEE links at CFG_TZDRAM_START,
+# the boot FIT has to load it there, the kernel has to keep out of the whole
+# TZDRAM+SHM window, and so do U-Boot's staging addresses. Nothing but this
+# check keeps them together.
+fit_load="$(sed -nE 's/^[[:space:]]*load = <(0x[0-9a-fA-F]+)>;$/\1/p' \
+	"$ubt/arch/arm/dts/$dtb_name-u-boot.dtsi" | head -1)"
+read -r tee_base tee_size < <(sed -nE \
+	's/^[[:space:]]*reg = <(0x[0-9a-fA-F]+) (0x[0-9a-fA-F]+)>;.*/\1 \2/p' \
+	"$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts")
+if [ -z "$fit_load" ] || [ -z "$tee_base" ]; then
+	echo '  FAIL cannot find the op-tee load address or the reserved-memory carve-out'; fail=1
+elif [ $(( fit_load )) != $(( tee_base )) ]; then
+	echo "  FAIL the FIT loads OP-TEE at $fit_load, the kernel reserves $tee_base"; fail=1
+else
+	echo "  ok   OP-TEE loads at $tee_base and the kernel reserves it"
+fi
+if [ -n "$tee_base" ]; then
+	bad_addr=0
+	while read -r var addr; do
+		if [ $(( addr >= tee_base && addr < tee_base + tee_size )) -eq 1 ]; then
+			echo "  FAIL $var=$addr is inside the OP-TEE window [$tee_base, +$tee_size)"; bad_addr=1
+		fi
+	done < <(sed -nE 's/^(kernel_addr_r|fdt_addr_r|ramdisk_addr_r|scriptaddr|pxefile_addr_r)=(0x[0-9a-fA-F]+)$/\1 \2/p' "$pico_env")
+	[ "$bad_addr" -eq 0 ] && echo '  ok   the U-Boot staging addresses stay clear of the OP-TEE window'
+	fail=$(( fail | bad_addr ))
+fi
+
 log "source patches"
 # Ensure every patch gets applied
 shopt -s nullglob

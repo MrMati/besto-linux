@@ -6,13 +6,20 @@
 # Outputs, all in $OUT:
 #   idbloader.img              TPL(rkbin DDR init) + SPL, written at the offset
 #                              the BootROM reads (LBA 64 on SD, 0x40000 in NAND)
-#   u-boot.img                 U-Boot proper, as a legacy uImage: binman only
-#                              wraps it in a FIT for arm64 or with OP-TEE
+#   u-boot.img                 binman's u-boot.itb: a FIT with OP-TEE (BL32)
+#                              and U-Boot proper. The SPL loads it, enters
+#                              OP-TEE, and OP-TEE returns to U-Boot in the
+#                              non-secure world.
 #   u-boot-rockchip-usb47*.bin maskrom RAM-boot images, for `rockusb`
 
 . "$(dirname "$0")/lib.sh"
 
 need git make "${CROSS_COMPILE}gcc" bison flex python3 swig
+
+# The secure world rides in the FIT, so it builds first (make uboot orders
+# this through the optee prerequisite).
+tee="$OUT/tee-raw.bin"
+[ -f "$tee" ] || die "no tee-raw.bin (make optee)"
 
 rkbin="$(fetch rkbin "$RKBIN_URL" "$RKBIN_REF")"
 ub="$(fetch u-boot "$UBOOT_URL" "$UBOOT_REF")"
@@ -103,16 +110,31 @@ python3 - "$ub/configs/$UBOOT_DEFCONFIG" "$OUT/u-boot/.config" <<-'PY'
 	PY
 
 log "building u-boot"
+# TEE lands in binman as -a tee-os-path (see the Makefile's binman rule) and
+# fills the FIT's op-tee node.
 make -C "$ub" O="$OUT/u-boot" CROSS_COMPILE="$CROSS_COMPILE" \
-	ROCKCHIP_TPL="$ddr" -j"$JOBS"
+	ROCKCHIP_TPL="$ddr" TEE="$tee" -j"$JOBS"
 
-for f in idbloader.img u-boot.img u-boot-rockchip-usb471.bin u-boot-rockchip-usb472.bin; do
+for f in idbloader.img u-boot-rockchip-usb471.bin u-boot-rockchip-usb472.bin; do
 	if [ -f "$OUT/u-boot/$f" ]; then
 		cp -f "$OUT/u-boot/$f" "$OUT/$f"
 	else
 		warn "u-boot did not produce $f"
 	fi
 done
+
+# With CONFIG_SPL_OPTEE_IMAGE the SPL payload is binman's u-boot.itb, not the
+# legacy uImage the Makefile also produces. It ships under the u-boot.img name
+# because everything downstream -- mk-image.sh, flash.sh, the NAND partition
+# map -- knows the payload by that name, and the SPL identifies the format by
+# magic, not by filename.
+[ -f "$OUT/u-boot/u-boot.itb" ] || die "u-boot did not produce u-boot.itb"
+cp -f "$OUT/u-boot/u-boot.itb" "$OUT/u-boot.img"
+
+# The NAND slot for U-Boot is fixed; the SD gap is checked by mk-image.sh.
+itbsize="$(stat -c %s "$OUT/u-boot.img")"
+[ "$itbsize" -le $(( NAND_UBOOT_SIZE )) ] \
+	|| die "u-boot.img is $itbsize bytes, the NAND slot holds $(( NAND_UBOOT_SIZE ))"
 
 # The Rockchip usbplug loader, needed to write the flash over USB. It is a
 # prebuilt from rkbin, not something we compile, but it belongs next to the

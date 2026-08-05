@@ -69,7 +69,10 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             gcc-arm-linux-gnueabihf build-essential bison flex libssl-dev \
             libgnutls28-dev device-tree-compiler python3 python3-dev \
-            python3-setuptools python3-pyelftools swig uuid-dev git
+            python3-setuptools python3-pyelftools python3-cryptography \
+            swig uuid-dev git
+      # make uboot builds OP-TEE first (Makefile prerequisite) and packs it
+      # into u-boot.img, binman's u-boot.itb.
       - run: make uboot
       - uses: actions/upload-artifact@v4
         with:

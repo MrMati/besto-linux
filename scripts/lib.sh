@@ -39,6 +39,12 @@ KERNEL_REF="${KERNEL_REF:-1ba51b059f25533c5529b7f68186190b47d6a7b3}"
 RKBIN_URL="${RKBIN_URL:-https://github.com/rockchip-linux/rkbin.git}"
 RKBIN_REF="${RKBIN_REF:-ecb4fcbe954edf38b3ae037d5de6d9f5bccf81f4}"
 
+# Upstream OP-TEE OS. The pin is the very commit that added the RV1106 to
+# plat-rockchip; no tagged release carries it yet. Move to a release tag once
+# one exists.
+OPTEE_URL="${OPTEE_URL:-https://github.com/OP-TEE/optee_os.git}"
+OPTEE_REF="${OPTEE_REF:-ed18ba2d11ce4b447e45e26b9065e77228f8f0de}"
+
 # RKNPU2 userspace runtime and headers.
 RKNPU2_URL="${RKNPU2_URL:-https://github.com/airockchip/rknn-toolkit2.git}"
 RKNPU2_REF="${RKNPU2_REF:-v2.3.2}"

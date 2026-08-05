@@ -80,6 +80,37 @@
 			function = "activity";
 		};
 	};
+
+	reserved-memory {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/*
+		 * OP-TEE: 16 MB of TZDRAM at 0x03d00000 (the plat-rockchip
+		 * rv1106 default, matching the vendor firmware layout) plus
+		 * 1 MB of static shared memory right above it. no-map, so the
+		 * kernel never allocates inside it -- the secure region does
+		 * not forgive: the first allocation that lands there hangs
+		 * the machine on a REGISTER_SHM call. U-Boot's staging
+		 * addresses in pico-max.env avoid the same window.
+		 */
+		optee@3d00000 {
+			reg = <0x03d00000 0x01100000>;
+			no-map;
+		};
+	};
+};
+
+/* --------------------------------------------------------------- OP-TEE --- */
+
+/*
+ * The SMC driver for the secure world the boot FIT started. rv1106.dtsi
+ * carries the node disabled; the TZDRAM it talks about is reserved no-map in
+ * the reserved-memory node above.
+ */
+&optee {
+	status = "okay";
 };
 
 /* ------------------------------------------------------------------ CPU --- */
