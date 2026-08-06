@@ -63,14 +63,19 @@ jobs:
         with:
           key: ${{ github.repository }}-src-uboot
           path: ${{ github.workspace }}/src
+      # libc6-dev-armhf-cross is not for U-Boot or the OP-TEE core (both are
+      # freestanding): the optee-examples step below builds libteec and the
+      # example host apps, which are hosted userspace and need the armhf libc
+      # headers. It is only a Recommends of the cross gcc, which
+      # --no-install-recommends drops.
       - name: install deps
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq --no-install-recommends \
-            gcc-arm-linux-gnueabihf build-essential bison flex libssl-dev \
-            libgnutls28-dev device-tree-compiler python3 python3-dev \
-            python3-setuptools python3-pyelftools python3-cryptography \
-            swig uuid-dev git
+            gcc-arm-linux-gnueabihf libc6-dev-armhf-cross build-essential \
+            bison flex libssl-dev libgnutls28-dev device-tree-compiler \
+            python3 python3-dev python3-setuptools python3-pyelftools \
+            python3-cryptography swig uuid-dev git
       # make uboot builds OP-TEE first (Makefile prerequisite) and packs it
       # into u-boot.img, binman's u-boot.itb.
       - run: make uboot
