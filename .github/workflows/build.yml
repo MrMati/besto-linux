@@ -74,6 +74,9 @@ jobs:
       # make uboot builds OP-TEE first (Makefile prerequisite) and packs it
       # into u-boot.img, binman's u-boot.itb.
       - run: make uboot
+      # The example TAs build against the dev kit the OP-TEE build just
+      # exported, so this job is the cheapest place for them.
+      - run: make optee-examples
       - uses: actions/upload-artifact@v4
         with:
           name: u-boot
@@ -82,6 +85,11 @@ jobs:
             out/u-boot.img
             out/u-boot-rockchip-usb47*.bin
             out/rv1106_download.bin
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: optee-examples-staging
+          path: out/optee-examples-staging
           if-no-files-found: error
 
   kernel:
@@ -166,8 +174,12 @@ jobs:
         with: { name: kernel, path: out }
       - uses: actions/download-artifact@v4
         with: { name: npu-staging, path: out/npu-staging }
+      - uses: actions/download-artifact@v4
+        with: { name: optee-examples-staging, path: out/optee-examples-staging }
       - name: restore permissions lost by the artifact round trip
-        run: chmod +x out/npu-staging/usr/bin/* || true
+        run: |
+          chmod +x out/npu-staging/usr/bin/* || true
+          chmod +x out/optee-examples-staging/usr/bin/* || true
       - run: scripts/build-rootfs.sh
       - run: scripts/mk-image.sh
       - name: image summary

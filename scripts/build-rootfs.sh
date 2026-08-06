@@ -22,6 +22,12 @@ fi
 kver="$(cat "$OUT/kernel.release" 2>/dev/null || true)"
 [ -n "$kver" ] || die "build the kernel first (make kernel): no $OUT/kernel.release"
 [ -d "$OUT/npu-staging" ] || die "build the npu userspace first (make npu)"
+# The OP-TEE examples only go where libteec2 goes: the standard package set.
+# A minimal rootfs would ship host binaries whose libteec.so.2 never resolves.
+if [ "$ROOTFS_PROFILE" != minimal ]; then
+	[ -d "$OUT/optee-examples-staging" ] \
+		|| die "build the op-tee examples first (make optee-examples)"
+fi
 
 # --- package set ------------------------------------------------------------
 
@@ -57,6 +63,9 @@ ovl="$OUT/rootfs-overlay"
 rm -rf "$ovl"; mkdir -p "$ovl"
 tar -C "$TOP/rootfs/overlay" -cf - . | tar -C "$ovl" -xf -
 tar -C "$OUT/npu-staging"   -cf - . | tar -C "$ovl" -xf -
+if [ "$ROOTFS_PROFILE" != minimal ]; then
+	tar -C "$OUT/optee-examples-staging" -cf - . | tar -C "$ovl" -xf -
+fi
 
 # Kernel modules and the devicetree/kernel the bootloader will read.
 #

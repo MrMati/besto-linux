@@ -129,6 +129,33 @@ On the Linux side `CONFIG_OPTEE` gives `/dev/tee0` (clients) and
 TA needs it. The kernel's `psci { method = "smc" }` calls, which previously
 had no monitor to land in, are answered by OP-TEE's ARM32 PSCI backend.
 
+### Trying it out
+
+The standard rootfs ships the upstream OP-TEE examples, built by
+`make optee-examples` from the pinned `optee_examples` against this tree's TA
+dev kit: the host apps land in `/usr/bin/optee_example_*` and the signed TAs
+in `/lib/optee_armtz/`, which is where Debian's `tee-supplicant` loads them
+from. End to end, on the board:
+
+```
+# optee_example_hello_world     # session + invoke: prints 42, then 43
+# optee_example_random          # entropy from the secure world
+# optee_example_secure_storage  # TEE storage, round-trips through
+                                # tee-supplicant's REE FS RPC to /var/lib/tee
+```
+
+`optee_example_aes`, `optee_example_acipher <keysize> <string>` and
+`optee_example_hotp` exercise crypto inside a TA. The first invocation of
+each example is when its TA gets loaded (supplicant fetch, signature check),
+so expect a beat of latency and a burst of secure-console traces.
+
+OP-TEE is a **debug build**: `CFG_TEE_CORE_DEBUG=y` (assertions, lock checks,
+verbose aborts) with core and TA trace levels at 3 (error+info+debug), so the
+secure console on ttyS2 narrates session setup and TA loading as the examples
+run. Level 4 would add flow tracing on every SMC and drown the 115200
+console. For a release build turn both levels back to 1 in
+`scripts/build-optee.sh`.
+
 One consequence to know about: a kernel from this tree expects to run in the
 normal world. Boot it with a pre-OP-TEE `u-boot.img` and the PSCI probe's SMC
 has no monitor to catch it; reflash both halves together.
@@ -168,8 +195,9 @@ make                             # uboot + kernel + npu + rootfs + images
 make info                        # what is pinned, what is built
 ```
 
-Individual stages: `make optee`, `make uboot`, `make kernel`, `make npu`,
-`make rootfs`, `make images`. Knobs, all overridable from the environment:
+Individual stages: `make optee`, `make optee-examples`, `make uboot`,
+`make kernel`, `make npu`, `make rootfs`, `make images`. Knobs, all
+overridable from the environment:
 
 ```bash
 ROOTFS_PROFILE=dev make          # minimal | standard | dev (adds a native toolchain)
