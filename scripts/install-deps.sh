@@ -7,7 +7,7 @@ pkgs=(
 	gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
 	build-essential bc bison flex libssl-dev libgnutls28-dev
 	device-tree-compiler python3 python3-dev python3-setuptools
-	python3-pyelftools swig libpython3-dev
+	python3-pyelftools python3-cryptography swig libpython3-dev
 	# u-boot binman/tooling
 	uuid-dev liblz4-tool lz4 zstd
 	# rootfs. eatmydata is for mmdebstrap's hook of the same name, which drops

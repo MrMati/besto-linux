@@ -1,7 +1,11 @@
 # luckfox-linux -- a glibc Linux system for the Luckfox Pico Max (RV1106G3)
 #
 #   make            build everything and produce flashable images
-#   make uboot      U-Boot (mainline + the in-review RV1106 series)
+#   make optee      OP-TEE OS (upstream, plat-rockchip rv1106) + TA dev kit
+#   make optee-examples  upstream example TAs and host apps, for exercising
+#                   the secure world end to end from userspace
+#   make uboot      U-Boot (mainline + the in-review RV1106 series), with
+#                   OP-TEE packed into the boot FIT
 #   make kernel     Rockchip 6.6 kernel, RKNPU built in
 #   make npu        glibc librknnmrt.so.2 and headers
 #   make rootfs     Debian armhf root filesystem
@@ -16,14 +20,22 @@ export BOARD
 
 S := scripts
 
-.PHONY: all uboot kernel npu rootfs images clean distclean deps shell info check
+.PHONY: all optee optee-examples uboot kernel npu rootfs images clean distclean deps shell info check
 
 all: images
 
 deps:
 	@$(S)/install-deps.sh
 
-uboot:
+optee:
+	@$(S)/build-optee.sh
+
+# The example TAs build against the dev kit that make optee exports.
+optee-examples: optee
+	@$(S)/build-optee-examples.sh
+
+# binman packs tee-raw.bin into u-boot.itb, so OP-TEE builds first.
+uboot: optee
 	@$(S)/build-uboot.sh
 
 kernel:
@@ -32,7 +44,7 @@ kernel:
 npu:
 	@$(S)/build-npu.sh
 
-rootfs: kernel npu
+rootfs: kernel npu optee-examples
 	@$(S)/build-rootfs.sh
 
 images: uboot rootfs

@@ -1,4 +1,9 @@
 # On top of minimal.list: the tools you reach for in the first hour on a board.
+# tee-supplicant serves the secure world's storage/RPC requests over
+# /dev/teepriv0 (its unit is device-activated, so it costs nothing until
+# OP-TEE asks); libteec2 is the client library TEE applications link against.
+tee-supplicant
+libteec2
 curl
 wget
 htop

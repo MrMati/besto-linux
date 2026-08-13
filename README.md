@@ -18,6 +18,7 @@ make           # -> out/luckfox-pico-max-sdcard.img
 | **init**       | systemd, with networkd/resolved/timesyncd wired up |
 | **kernel**     | Rockchip `develop-6.6` + a devicetree and config written for this board |
 | **bootloader** | Mainline U-Boot with standard boot (`extlinux.conf`), not the 2017.09 vendor fork |
+| **secure world** | Upstream OP-TEE as the secure monitor, built from source; `/dev/tee0` and `tee-supplicant` ready |
 | **NPU**        | `rknpu` built into the kernel, plus a **glibc-adapted `librknnmrt.so.2`** |
 | **memory**     | zram swap, tuned sysctls: a full systemd userspace idles around 45 MB of the 256 MB |
 | **cpufreq**    | `ondemand` over 408 MHz - 1.2 GHz, throttling to a cooling device at 85 C |
@@ -95,6 +96,70 @@ actually belong to the NPU node (its ACLK is a gate on a mux with no divider,
 so the NPU is simply whatever `clk_500m_src` is, and 594 MHz is GPLL/2), which
 is what the fragment is there to explain.
 
+## Secure world (OP-TEE)
+
+The image boots with a real secure world: **upstream OP-TEE**, built from
+source, no `rv1106_tee_ta` blob from rkbin. The RV1106 port landed in
+`plat-rockchip` upstream (the pinned commit is that very change), so the whole
+thing is one plain `make PLATFORM=rockchip-rv1106`.
+
+The boot chain becomes: BootROM loads `idbloader.img` (rkbin DDR init + SPL);
+the SPL loads `u-boot.img`, which is now binman's `u-boot.itb`, a FIT holding
+OP-TEE and U-Boot proper; the SPL enters OP-TEE, which sets up the secure
+world and returns to U-Boot in the normal world; U-Boot then boots Linux via
+`extlinux.conf` as before. This is mainline U-Boot's stock
+`CONFIG_SPL_OPTEE_IMAGE` flow, the same one the RK3229/RK3288 use, with two
+board-side adjustments:
+
+- the FIT's op-tee load address is moved from the vendor blob's `0x08400000`
+  to `0x03d00000`, where upstream OP-TEE links (`CFG_TZDRAM_START`, matching
+  the vendor firmware layout);
+- OP-TEE is built with `CFG_DT_ADDR` unset, so it takes the control DTB
+  address the mainline SPL hands it in `r2` instead of the fixed address the
+  vendor SPL flow needs.
+
+The memory window `[0x03d00000, 0x04e00000)` -- 16 MB TZDRAM + 1 MB static
+shared memory -- is reserved `no-map` in the kernel devicetree, and U-Boot's
+staging addresses keep clear of it. `make check` holds all of those numbers
+together.
+
+On the Linux side `CONFIG_OPTEE` gives `/dev/tee0` (clients) and
+`/dev/teepriv0` (supplicant); the standard rootfs profile ships Debian's
+`tee-supplicant` and `libteec2`, so the userspace half is ready the moment a
+TA needs it. The kernel's `psci { method = "smc" }` calls, which previously
+had no monitor to land in, are answered by OP-TEE's ARM32 PSCI backend.
+
+### Trying it out
+
+The standard rootfs ships the upstream OP-TEE examples, built by
+`make optee-examples` from the pinned `optee_examples` against this tree's TA
+dev kit: the host apps land in `/usr/bin/optee_example_*` and the signed TAs
+in `/lib/optee_armtz/`, which is where Debian's `tee-supplicant` loads them
+from. End to end, on the board:
+
+```
+# optee_example_hello_world     # session + invoke: prints 42, then 43
+# optee_example_random          # entropy from the secure world
+# optee_example_secure_storage  # TEE storage, round-trips through
+                                # tee-supplicant's REE FS RPC to /var/lib/tee
+```
+
+`optee_example_aes`, `optee_example_acipher <keysize> <string>` and
+`optee_example_hotp` exercise crypto inside a TA. The first invocation of
+each example is when its TA gets loaded (supplicant fetch, signature check),
+so expect a beat of latency and a burst of secure-console traces.
+
+OP-TEE is a **debug build**: `CFG_TEE_CORE_DEBUG=y` (assertions, lock checks,
+verbose aborts) with core and TA trace levels at 3 (error+info+debug), so the
+secure console on ttyS2 narrates session setup and TA loading as the examples
+run. Level 4 would add flow tracing on every SMC and drown the 115200
+console. For a release build turn both levels back to 1 in
+`scripts/build-optee.sh`.
+
+One consequence to know about: a kernel from this tree expects to run in the
+normal world. Boot it with a pre-OP-TEE `u-boot.img` and the PSCI probe's SMC
+has no monitor to catch it; reflash both halves together.
+
 ## CPU frequency, and why it stops at 1.2 GHz
 
 The RV1106 is a 1.6 GHz part and `rv1106.dtsi` has the OPPs to prove it, but
@@ -130,8 +195,9 @@ make                             # uboot + kernel + npu + rootfs + images
 make info                        # what is pinned, what is built
 ```
 
-Individual stages: `make uboot`, `make kernel`, `make npu`, `make rootfs`,
-`make images`. Knobs, all overridable from the environment:
+Individual stages: `make optee`, `make optee-examples`, `make uboot`,
+`make kernel`, `make npu`, `make rootfs`, `make images`. Knobs, all
+overridable from the environment:
 
 ```bash
 ROOTFS_PROFILE=dev make          # minimal | standard | dev (adds a native toolchain)
