@@ -16,9 +16,9 @@ env:
 jobs:
   check:
     name: check
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: install the cross toolchain
         run: |
           sudo apt-get update -qq
@@ -28,18 +28,10 @@ jobs:
 
   npu:
     name: npu runtime
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     needs: check
     steps:
-      - uses: actions/checkout@v4
-      # Sticky disk keys are per job, not per repo: a disk can only be mounted
-      # by one job at a time, and check/npu/uboot/kernel/image all run in
-      # parallel. Sharing one key would serialise the whole workflow.
-      - name: mount the download cache
-        uses: useblacksmith/stickydisk@v1
-        with:
-          key: ${{ github.repository }}-dl-npu
-          path: ${{ github.workspace }}/dl
+      - uses: actions/checkout@v7
       - name: install deps
         run: |
           sudo apt-get update -qq
@@ -54,15 +46,10 @@ jobs:
 
   uboot:
     name: u-boot
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     needs: check
     steps:
-      - uses: actions/checkout@v4
-      - name: mount the source cache
-        uses: useblacksmith/stickydisk@v1
-        with:
-          key: ${{ github.repository }}-src-uboot
-          path: ${{ github.workspace }}/src
+      - uses: actions/checkout@v7
       # libc6-dev-armhf-cross is not for U-Boot or the OP-TEE core (both are
       # freestanding): the optee-examples step below builds libteec and the
       # example host apps, which are hosted userspace and need the armhf libc
@@ -99,17 +86,12 @@ jobs:
 
   kernel:
     name: kernel
-    runs-on: blacksmith-16vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     needs: check
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # The pinned Rockchip tree is a 266 MiB shallow fetch that lib.sh skips
       # entirely once the ref is already in $SRC.
-      - name: mount the source cache
-        uses: useblacksmith/stickydisk@v1
-        with:
-          key: ${{ github.repository }}-src-kernel
-          path: ${{ github.workspace }}/src
       - name: install deps
         run: |
           sudo apt-get update -qq
@@ -140,7 +122,7 @@ jobs:
 
   image:
     name: image (${{ matrix.profile }})
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: ubuntu-22.04
     needs: [uboot, kernel, npu]
     strategy:
       fail-fast: false
@@ -149,14 +131,7 @@ jobs:
     env:
       ROOTFS_PROFILE: ${{ matrix.profile }}
     steps:
-      - uses: actions/checkout@v4
-      # Holds the base rootfs tarball, which is the whole cost of this job:
-      # ~120s of qemu-emulated dpkg that depends only on the package list.
-      - name: mount the download cache
-        uses: useblacksmith/stickydisk@v1
-        with:
-          key: ${{ github.repository }}-dl-rootfs-${{ matrix.profile }}
-          path: ${{ github.workspace }}/dl
+      - uses: actions/checkout@v7
       - name: install deps
         run: |
           sudo apt-get update -qq
