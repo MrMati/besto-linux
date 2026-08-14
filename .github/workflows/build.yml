@@ -16,7 +16,7 @@ env:
 jobs:
   check:
     name: check
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v7
       - name: install the cross toolchain
@@ -28,7 +28,7 @@ jobs:
 
   npu:
     name: npu runtime
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     needs: check
     steps:
       - uses: actions/checkout@v7
@@ -46,7 +46,7 @@ jobs:
 
   uboot:
     name: u-boot
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     needs: check
     steps:
       - uses: actions/checkout@v7
@@ -86,7 +86,7 @@ jobs:
 
   kernel:
     name: kernel
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     needs: check
     steps:
       - uses: actions/checkout@v7
@@ -122,7 +122,7 @@ jobs:
 
   image:
     name: image (${{ matrix.profile }})
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     needs: [uboot, kernel, npu]
     strategy:
       fail-fast: false
