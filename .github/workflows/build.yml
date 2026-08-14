@@ -135,15 +135,15 @@ jobs:
       - name: install deps
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends \
-            mmdebstrap qemu-user-static arch-test debian-archive-keyring \
+          sudo apt-get install -y -qq --no-install-recommends mmdebstrap \
+            qemu-user qemu-user-binfmt arch-test debian-archive-keyring \
             eatmydata gdisk e2fsprogs mtd-utils zstd fdisk openssl
       - name: register the armhf binfmt handler
         run: |
           # The runner may boot without binfmt_misc mounted, so nothing can claim
           # armhf ELFs and mmdebstrap refuses to run maintainer scripts. Mount
           # it, then let systemd-binfmt replay /usr/lib/binfmt.d -- that is
-          # where Ubuntu's qemu-user-static keeps its registrations, not in the
+          # where Ubuntu's qemu-user keeps its registrations, not in the
           # update-binfmts database.
           sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
           sudo /usr/lib/systemd/systemd-binfmt

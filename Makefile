@@ -58,7 +58,7 @@ info:
 
 shell:
 	@test -d out/rootfs || { echo "no rootfs; run make rootfs" >&2; exit 1; }
-	@echo "entering out/rootfs (needs qemu-user-static binfmt)"
+	@echo "entering out/rootfs (needs qemu-user binfmt)"
 	@sudo chroot out/rootfs /bin/bash
 
 clean:

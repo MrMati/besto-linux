@@ -7,7 +7,7 @@
 # pip wheels. On 256MB of RAM a bookworm/trixie userspace with systemd idles
 # around 45MB, which leaves plenty for the NPU.
 #
-# Requires: mmdebstrap, and qemu-user-static + binfmt when building on x86.
+# Requires: mmdebstrap, and qemu-user + binfmt when building on x86.
 
 . "$(dirname "$0")/lib.sh"
 
@@ -15,8 +15,8 @@ need mmdebstrap readelf
 elevate "$@"
 
 if [ "$(hostarch_deb)" != "$ROOTFS_ARCH" ]; then
-	command -v qemu-arm-static >/dev/null 2>&1 \
-		|| die "cross-building $ROOTFS_ARCH needs qemu-user-static (and binfmt-support)"
+	command -v qemu-arm >/dev/null 2>&1 \
+		|| die "cross-building $ROOTFS_ARCH needs qemu-user (and binfmt-support)"
 fi
 
 kver="$(cat "$OUT/kernel.release" 2>/dev/null || true)"
