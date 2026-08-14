@@ -38,7 +38,7 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends \
             gcc-arm-linux-gnueabihf libc6-dev-armhf-cross git
       - run: make npu
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: npu-staging
           path: out/npu-staging
@@ -69,7 +69,7 @@ jobs:
       # The example TAs build against the dev kit the OP-TEE build just
       # exported, so this job is the cheapest place for them.
       - run: make optee-examples
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: u-boot
           path: |
@@ -78,7 +78,7 @@ jobs:
             out/u-boot-rockchip-usb47*.bin
             out/rv1106_download.bin
           if-no-files-found: error
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: optee-examples-staging
           path: out/optee-examples-staging
@@ -110,7 +110,7 @@ jobs:
             grep -E '^CONFIG_(ROCKCHIP_RKNPU|ROCKCHIP_RKNPU_DMA_HEAP|ZRAM|CGROUPS|EXT4_FS|UBIFS_FS)=' out/linux/.config
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: kernel
           path: |
@@ -140,21 +140,21 @@ jobs:
             eatmydata gdisk e2fsprogs mtd-utils zstd fdisk openssl
       - name: register the armhf binfmt handler
         run: |
-          # The runner boots without binfmt_misc mounted, so nothing can claim
+          # The runner may boot without binfmt_misc mounted, so nothing can claim
           # armhf ELFs and mmdebstrap refuses to run maintainer scripts. Mount
           # it, then let systemd-binfmt replay /usr/lib/binfmt.d -- that is
           # where Ubuntu's qemu-user-static keeps its registrations, not in the
           # update-binfmts database.
-          sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+          sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc 2>/dev/null || true
           sudo /usr/lib/systemd/systemd-binfmt
           arch-test armhf
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: u-boot, path: out }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: kernel, path: out }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: npu-staging, path: out/npu-staging }
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: optee-examples-staging, path: out/optee-examples-staging }
       - name: restore permissions lost by the artifact round trip
         run: |
@@ -172,7 +172,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: compress
         run: zstd -19 -T0 --rm out/luckfox-pico-max-sdcard.img
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: image-${{ matrix.profile }}
           path: |
