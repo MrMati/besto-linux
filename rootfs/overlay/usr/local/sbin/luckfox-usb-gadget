@@ -1,5 +1,7 @@
 #!/bin/sh
-# Present the Type-C port as a USB NCM network adapter plus an ACM serial port.
+# Present the Type-C port as a USB RNDIS network adapter plus an ACM serial
+# port. RNDIS is selected deliberately: it works without a driver install on
+# Windows, macOS and Linux hosts, and the board's OpenSSH service listens on it.
 #
 # Plug the board into a laptop and you get a usb0 interface on both ends and a
 # /dev/ttyACM* console, with no UART adapter and no Ethernet cable. The board
@@ -44,22 +46,31 @@ up() {
 
 	mkdir -p "$G/strings/0x409"
 	echo "Luckfox"  > "$G/strings/0x409/manufacturer"
-	echo "Pico Max" > "$G/strings/0x409/product"
+	echo "Pico" > "$G/strings/0x409/product"
 	echo "$SERIAL"  > "$G/strings/0x409/serialnumber"
 
-	# Link order below is interface order on the wire: NCM takes 0 and 1, so
+	# Link order below is interface order on the wire: RNDIS takes 0 and 1, so
 	# the ACM control interface is 2 and the host's stable name for the tty
 	# is /dev/serial/by-id/usb-Luckfox_Pico_Max_$SERIAL-if02.
-	mkdir -p "$G/functions/ncm.usb0"
-	echo "$MAC_DEV"  > "$G/functions/ncm.usb0/dev_addr"
-	echo "$MAC_HOST" > "$G/functions/ncm.usb0/host_addr"
+	mkdir -p "$G/functions/rndis.usb0"
+	echo "$MAC_DEV"  > "$G/functions/rndis.usb0/dev_addr"
+	echo "$MAC_HOST" > "$G/functions/rndis.usb0/host_addr"
 	mkdir -p "$G/functions/acm.gs0"
 
 	mkdir -p "$G/configs/c.1/strings/0x409"
-	echo "NCM + ACM" > "$G/configs/c.1/strings/0x409/configuration"
+	echo "RNDIS + ACM" > "$G/configs/c.1/strings/0x409/configuration"
 	echo 250         > "$G/configs/c.1/MaxPower"
-	ln -sf "$G/functions/ncm.usb0" "$G/configs/c.1/"
+	ln -sf "$G/functions/rndis.usb0" "$G/configs/c.1/"
 	ln -sf "$G/functions/acm.gs0"  "$G/configs/c.1/"
+
+	# Advertise Microsoft's RNDIS compatible ID. Without this Windows sees a
+	# composite USB device but may not bind its inbox RNDIS driver.
+	echo 1 > "$G/os_desc/use"
+	echo 0xcd > "$G/os_desc/b_vendor_code"
+	echo MSFT100 > "$G/os_desc/qw_sign"
+	echo RNDIS > "$G/functions/rndis.usb0/os_desc/interface.rndis/compatible_id"
+	echo 5162001 > "$G/functions/rndis.usb0/os_desc/interface.rndis/sub_compatible_id"
+	ln -sf "$G/configs/c.1" "$G/os_desc/c.1"
 
 	echo "$udc" > "$G/UDC"
 
@@ -79,9 +90,9 @@ up() {
 down() {
 	[ -d "$G" ] || exit 0
 	echo "" > "$G/UDC" 2>/dev/null || true
-	rm -f "$G"/configs/c.1/ncm.usb0 "$G"/configs/c.1/acm.gs0
+	rm -f "$G"/os_desc/c.1 "$G"/configs/c.1/rndis.usb0 "$G"/configs/c.1/acm.gs0
 	rmdir "$G"/configs/c.1/strings/0x409 "$G"/configs/c.1 2>/dev/null || true
-	rmdir "$G"/functions/ncm.usb0 "$G"/functions/acm.gs0 2>/dev/null || true
+	rmdir "$G"/functions/rndis.usb0 "$G"/functions/acm.gs0 2>/dev/null || true
 	rmdir "$G"/strings/0x409 "$G" 2>/dev/null || true
 }
 

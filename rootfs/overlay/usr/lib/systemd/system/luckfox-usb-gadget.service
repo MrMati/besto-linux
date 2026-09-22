@@ -1,5 +1,5 @@
 [Unit]
-Description=USB gadget (NCM network + ACM serial) on the Type-C port
+Description=USB gadget (RNDIS network + ACM serial) on the Type-C port
 After=systemd-modules-load.service
 ConditionPathIsDirectory=/sys/kernel/config
 Wants=serial-getty@ttyGS0.service
