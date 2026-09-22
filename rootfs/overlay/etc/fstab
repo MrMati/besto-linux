@@ -2,3 +2,6 @@
 /dev/root        /              auto    defaults,noatime                 0      1
 tmpfs            /tmp           tmpfs   defaults,nosuid,nodev,size=64M   0      0
 tmpfs            /var/tmp       tmpfs   defaults,nosuid,nodev,size=32M   0      0
+# Release installations boot the complete system from NAND. Format the optional
+# microSD card as FAT32 with this label and it becomes persistent user storage.
+LABEL=LUCKFOX-DATA /mnt/sdcard   vfat    nofail,noatime,uid=0,gid=0,umask=022,x-systemd.device-timeout=5s 0 2

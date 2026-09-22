@@ -3,10 +3,10 @@
  * Luckfox Pico Max -- RV1106G3, 256MB DDR3L, 256MB SPI NAND.
  *
  * Deliberately lean: this describes the board as a general purpose Linux
- * machine with an NPU, not as an IP camera. The camera/ISP/encoder half of the
- * SoC is left disabled, which is what rv1106.dtsi already does -- we simply do
- * not include rv1106-evb.dtsi or rv1106-ipc.dtsi, both of which turn it all on
- * and pull in a fixed set of sensors.
+ * machine, not as an IP camera. The camera/ISP/encoder half of the SoC is left
+ * disabled, which is what rv1106.dtsi already does -- we simply do not include
+ * rv1106-evb.dtsi or rv1106-ipc.dtsi, both of which turn it all on and pull in
+ * a fixed set of sensors.
  *
  */
 
@@ -81,36 +81,6 @@
 		};
 	};
 
-	reserved-memory {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		ranges;
-
-		/*
-		 * OP-TEE: 16 MB of TZDRAM at 0x03d00000 (the plat-rockchip
-		 * rv1106 default, matching the vendor firmware layout) plus
-		 * 1 MB of static shared memory right above it. no-map, so the
-		 * kernel never allocates inside it -- the secure region does
-		 * not forgive: the first allocation that lands there hangs
-		 * the machine on a REGISTER_SHM call. U-Boot's staging
-		 * addresses in pico-max.env avoid the same window.
-		 */
-		optee@3d00000 {
-			reg = <0x03d00000 0x01100000>;
-			no-map;
-		};
-	};
-};
-
-/* --------------------------------------------------------------- OP-TEE --- */
-
-/*
- * The SMC driver for the secure world the boot FIT started. rv1106.dtsi
- * carries the node disabled; the TZDRAM it talks about is reserved no-map in
- * the reserved-memory node above.
- */
-&optee {
-	status = "okay";
 };
 
 /* ------------------------------------------------------------------ CPU --- */
@@ -148,23 +118,6 @@
 	/delete-node/ opp-1608000000;
 };
 
-/* ------------------------------------------------------------------ NPU --- */
-
-&npu {
-	assigned-clocks = <&cru ACLK_RKNN>;
-	assigned-clock-rates = <500000000>;
-
-	interrupt-names = "npu_irq";
-	status = "okay";
-};
-
-/*
- * Overclock the NPU to 594 MHz. Comment this line out for the 500 MHz the
- * clock tree comes up on; it has to sit after &npu, because a later override
- * wins. The dtsi explains what actually carries the rate.
- */
-#include "rv1106g3-luckfox-pico-max-npu-594mhz.dtsi"
-
 /* ---------------------------------------------------------------- flash --- */
 
 &sfc {
@@ -176,6 +129,18 @@
 		spi-max-frequency = <75000000>;
 		spi-rx-bus-width = <4>;
 		spi-tx-bus-width = <1>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			partition@0 { label = "env"; reg = <0x00000000 0x00040000>; };
+			partition@40000 { label = "idblock"; reg = <0x00040000 0x00100000>; read-only; };
+			partition@140000 { label = "uboot"; reg = <0x00140000 0x00100000>; read-only; };
+			partition@240000 { label = "boot"; reg = <0x00240000 0x01000000>; };
+			partition@1240000 { label = "ubi"; reg = <0x01240000 0x0edc0000>; };
+		};
 	};
 };
 

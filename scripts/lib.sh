@@ -28,9 +28,8 @@ mkdir -p "$SRC" "$OUT" "$DL"
 UBOOT_URL="${UBOOT_URL:-https://concept.u-boot.org/u-boot/u-boot.git}"
 UBOOT_REF="${UBOOT_REF:-63746e0a413b868c2ff0fc5d921b0c8648a9603d}"
 
-# Rockchip's 6.6 vendor kernel. This is the newest tree that has both RV1106
-# SoC support and drivers/rknpu with a rockchip,rv1106-rknpu match. Mainline
-# Linux has no RV1106 support at all
+# Rockchip's 6.6 vendor kernel. This is the newest tree with RV1103/RV1106
+# support. Mainline Linux has no RV110x support yet.
 KERNEL_URL="${KERNEL_URL:-https://github.com/rockchip-linux/kernel.git}"
 KERNEL_BRANCH="${KERNEL_BRANCH:-develop-6.6}"
 KERNEL_REF="${KERNEL_REF:-1ba51b059f25533c5529b7f68186190b47d6a7b3}"
@@ -38,26 +37,6 @@ KERNEL_REF="${KERNEL_REF:-1ba51b059f25533c5529b7f68186190b47d6a7b3}"
 # Closed-source DDR init blob. Nothing boots without it.
 RKBIN_URL="${RKBIN_URL:-https://github.com/rockchip-linux/rkbin.git}"
 RKBIN_REF="${RKBIN_REF:-ecb4fcbe954edf38b3ae037d5de6d9f5bccf81f4}"
-
-# Upstream OP-TEE OS. The pin is the very commit that added the RV1106 to
-# plat-rockchip; no tagged release carries it yet. Move to a release tag once
-# one exists.
-OPTEE_URL="${OPTEE_URL:-https://github.com/OP-TEE/optee_os.git}"
-OPTEE_REF="${OPTEE_REF:-ed18ba2d11ce4b447e45e26b9065e77228f8f0de}"
-
-# OP-TEE client library and example TAs, pinned to the latest tagged release
-# (the OPTEE_REF above sits between 4.9.0 and the next tag). optee_client is
-# a build-time dependency only: the examples' host binaries link against its
-# libteec at build time but run against Debian's libteec2 on the board --
-# both carry the same libteec.so.2 soname and the stable TEEC_* GP Client API.
-OPTEE_CLIENT_URL="${OPTEE_CLIENT_URL:-https://github.com/OP-TEE/optee_client.git}"
-OPTEE_CLIENT_REF="${OPTEE_CLIENT_REF:-4.9.0}"
-OPTEE_EXAMPLES_URL="${OPTEE_EXAMPLES_URL:-https://github.com/linaro-swg/optee_examples.git}"
-OPTEE_EXAMPLES_REF="${OPTEE_EXAMPLES_REF:-4.9.0}"
-
-# RKNPU2 userspace runtime and headers.
-RKNPU2_URL="${RKNPU2_URL:-https://github.com/airockchip/rknn-toolkit2.git}"
-RKNPU2_REF="${RKNPU2_REF:-v2.3.2}"
 
 CROSS_COMPILE="${CROSS_COMPILE:-arm-linux-gnueabihf-}"
 JOBS="${JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"

@@ -4,8 +4,7 @@
 #
 # Debian rather than Buildroot/Yocto because the point of this repo is a glibc
 # system you can actually live in: apt, security updates, 60k packages, rustup,
-# pip wheels. On 256MB of RAM a bookworm/trixie userspace with systemd idles
-# around 45MB, which leaves plenty for the NPU.
+# pip wheels. The minimal profile also fits the Pico Mini's 64MB of RAM.
 #
 # Requires: mmdebstrap, and qemu-user + binfmt when building on x86.
 
@@ -21,13 +20,6 @@ fi
 
 kver="$(cat "$OUT/kernel.release" 2>/dev/null || true)"
 [ -n "$kver" ] || die "build the kernel first (make kernel): no $OUT/kernel.release"
-[ -d "$OUT/npu-staging" ] || die "build the npu userspace first (make npu)"
-# The OP-TEE examples only go where libteec2 goes: the standard package set.
-# A minimal rootfs would ship host binaries whose libteec.so.2 never resolves.
-if [ "$ROOTFS_PROFILE" != minimal ]; then
-	[ -d "$OUT/optee-examples-staging" ] \
-		|| die "build the op-tee examples first (make optee-examples)"
-fi
 
 # --- package set ------------------------------------------------------------
 
@@ -62,10 +54,6 @@ mkdir -p "$rootdir"
 ovl="$OUT/rootfs-overlay"
 rm -rf "$ovl"; mkdir -p "$ovl"
 tar -C "$TOP/rootfs/overlay" -cf - . | tar -C "$ovl" -xf -
-tar -C "$OUT/npu-staging"   -cf - . | tar -C "$ovl" -xf -
-if [ "$ROOTFS_PROFILE" != minimal ]; then
-	tar -C "$OUT/optee-examples-staging" -cf - . | tar -C "$ovl" -xf -
-fi
 
 # Kernel modules and the devicetree/kernel the bootloader will read.
 #
@@ -104,13 +92,13 @@ cat > "$ovl/boot/extlinux/extlinux.conf.in" <<-EOF
 	# the running board; U-Boot reads this file directly.
 	default luckfox
 	timeout 10
-	menu title Luckfox Pico Max
+	menu title $BOARD_DESC
 
 	label luckfox
 	    menu label Linux $kver
 	    kernel /boot/$KERNEL_IMAGE
 	    fdt /boot/$KERNEL_DTS.dtb
-	    append root=@@ROOT@@ rootwait ro console=ttyS2,115200n8 rk_dma_heap_cma=$RK_DMA_HEAP_SIZE
+	    append root=@@ROOT@@ rootwait ro console=ttyS2,115200n8
 EOF
 
 cat > "$ovl/etc/os-release.luckfox" <<-EOF

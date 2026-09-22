@@ -11,7 +11,6 @@ printf '%-14s %s\n' ''      "@ $UBOOT_REF"
 printf '%-14s %s\n' kernel  "$KERNEL_URL ($KERNEL_BRANCH)"
 printf '%-14s %s\n' ''      "@ $KERNEL_REF"
 printf '%-14s %s\n' rkbin   "$RKBIN_URL @ $RKBIN_REF"
-printf '%-14s %s\n' rknpu2  "$RKNPU2_URL @ $RKNPU2_REF"
 printf '%-14s %s\n' rootfs  "debian $ROOTFS_SUITE/$ROOTFS_ARCH, profile $ROOTFS_PROFILE"
 echo
 

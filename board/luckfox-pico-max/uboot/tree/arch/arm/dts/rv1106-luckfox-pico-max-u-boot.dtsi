@@ -2,25 +2,6 @@
 
 #include "rockchip-u-boot.dtsi"
 
-#if defined(CONFIG_SPL_FIT) && defined(CONFIG_SPL_OPTEE_IMAGE)
-/*
- * rockchip-u-boot.dtsi hardcodes the op-tee FIT node's load address to
- * SDRAM + 0x8400000, where Rockchip's proprietary TEE blob historically
- * lived. Upstream OP-TEE's rv1106 flavor is linked for CFG_TZDRAM_START =
- * 0x03d00000 (the vendor firmware layout, rkbin RV1106TOS.ini), and
- * tee-raw.bin is position-dependent: the SPL jumps to the load address, so
- * the FIT has to put it where it was linked.
- */
-&fit_template {
-	images {
-		op-tee {
-			load = <0x03d00000>;
-			entry = <0x03d00000>;
-		};
-	};
-};
-#endif
-
 / {
 	chosen {
 		/*

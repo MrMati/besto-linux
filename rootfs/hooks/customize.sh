@@ -118,14 +118,13 @@ ln -sf /usr/lib/systemd/system/serial-getty@.service \
 # systemd-resolved owns /etc/resolv.conf.
 ln -sf ../run/systemd/resolve/stub-resolv.conf "$target/etc/resolv.conf"
 
+# A NAND-root installation can mount a separately prepared FAT32 microSD card
+# here. The development SD image has no such label, so this remains empty.
+mkdir -p "$target/mnt/sdcard"
+
 # ----------------------------------------------------------------- modules ---
 say "depmod $LUCKFOX_KVER"
 depmod -b "$target" "$LUCKFOX_KVER"
-
-# ------------------------------------------------------------------ groups ---
-# The udev rule for /dev/rknpu hands the device to the render group; make sure
-# it exists even on a minimal profile that pulled in no GPU packages.
-grep -q '^render:' "$target/etc/group" || echo 'render:x:993:' >> "$target/etc/group"
 
 # ------------------------------------------------------------------ tidy up ---
 say "trimming"

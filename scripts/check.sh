@@ -12,26 +12,24 @@ log "shell syntax"
 while IFS= read -r f; do
 	bash -n "$f" || { echo "  FAIL $f"; fail=1; }
 done < <(find "$TOP/scripts" "$TOP/rootfs/hooks" -name '*.sh' -type f)
-for f in "$TOP"/rootfs/overlay/usr/local/sbin/* "$TOP"/npu/rknpu-info; do
+for f in "$TOP"/rootfs/overlay/usr/local/sbin/*; do
 	sh -n "$f" || { echo "  FAIL $f"; fail=1; }
 done
-echo "  ok   $(find "$TOP/scripts" -name '*.sh' | wc -l) build scripts, 3 target scripts"
+echo "  ok   $(find "$TOP/scripts" -name '*.sh' | wc -l) build scripts, 2 target scripts"
 
 log "board definition"
-for v in BOARD_NAME SOC DRAM_SIZE_MB RKBIN_DDR_BIN UBOOT_DEFCONFIG KERNEL_DEFCONFIG KERNEL_DTS RK_DMA_HEAP_SIZE; do
+for v in BOARD_NAME SOC DRAM_SIZE_MB RKBIN_DDR_BIN RKBIN_LOADER_INI UBOOT_DEFCONFIG KERNEL_DEFCONFIG KERNEL_DTS; do
 	if [ -z "${!v:-}" ]; then echo "  FAIL $v is unset"; fail=1; fi
 done
 echo "  ok   board.env defines the required variables"
 
 log "boot arguments"
-pico_env="$BOARD_DIR/uboot/tree/board/luckfox/pico/pico-max.env"
-# The two heap sizes are written out in two places by two different toolchains,
-# so nothing but this check keeps them together.
-ubi_heap="$(sed -nE 's/^ubi_bootargs=.*[[:space:]]rk_dma_heap_cma=([^[:space:]]+).*$/\1/p' "$pico_env")"
-if [ "$ubi_heap" != "$RK_DMA_HEAP_SIZE" ]; then
-	echo "  FAIL ubi_bootargs asks for rk_dma_heap_cma=${ubi_heap:-<nothing>}, board.env says $RK_DMA_HEAP_SIZE"; fail=1
+env_name="$(sed -n 's/^CONFIG_ENV_SOURCE_FILE="\(.*\)"$/\1/p' "$BOARD_DIR/uboot/tree/configs/$UBOOT_DEFCONFIG")"
+pico_env="$BOARD_DIR/uboot/tree/board/luckfox/pico/$env_name.env"
+if grep -q '^ubi_bootargs=.*root=ubi0:rootfs.*rootfstype=ubifs' "$pico_env"; then
+	echo '  ok   U-Boot has a UBIFS fallback for the NAND-root release image'
 else
-	echo "  ok   the NPU heap size agrees between board.env and ubi_bootargs"
+	echo '  FAIL U-Boot has no UBIFS NAND-root fallback'; fail=1
 fi
 # Handing the card over rw skips systemd-fsck-root.service for ever, because
 # its ConditionPathIsReadWrite=!/ is the only thing that ever schedules a check.
@@ -46,7 +44,6 @@ ubt="$BOARD_DIR/uboot/tree"
 dtb_name="$(sed -n 's/^CONFIG_DEFAULT_DEVICE_TREE="\(.*\)"$/\1/p' "$ubt/configs/$UBOOT_DEFCONFIG")"
 check test -f "$ubt/arch/arm/dts/$dtb_name.dts"
 check test -f "$ubt/arch/arm/dts/$dtb_name-u-boot.dtsi"
-env_name="$(sed -n 's/^CONFIG_ENV_SOURCE_FILE="\(.*\)"$/\1/p' "$ubt/configs/$UBOOT_DEFCONFIG")"
 check test -f "$ubt/board/luckfox/pico/$env_name.env"
 dram="$(sed -n 's/^CONFIG_LUCKFOX_PICO_DRAM_SIZE_MB=//p' "$ubt/configs/$UBOOT_DEFCONFIG")"
 if [ "$dram" != "$DRAM_SIZE_MB" ]; then
@@ -64,32 +61,13 @@ else
 	echo "  ok   the SD u-boot offset agrees between board.env and the defconfig"
 fi
 
-log "op-tee memory window"
-# One address, four files, three toolchains: OP-TEE links at CFG_TZDRAM_START,
-# the boot FIT has to load it there, the kernel has to keep out of the whole
-# TZDRAM+SHM window, and so do U-Boot's staging addresses. Nothing but this
-# check keeps them together.
-fit_load="$(sed -nE 's/^[[:space:]]*load = <(0x[0-9a-fA-F]+)>;$/\1/p' \
-	"$ubt/arch/arm/dts/$dtb_name-u-boot.dtsi" | head -1)"
-read -r tee_base tee_size < <(sed -nE \
-	's/^[[:space:]]*reg = <(0x[0-9a-fA-F]+) (0x[0-9a-fA-F]+)>;.*/\1 \2/p' \
-	"$BOARD_DIR/kernel/dts/$KERNEL_DTS.dts")
-if [ -z "$fit_load" ] || [ -z "$tee_base" ]; then
-	echo '  FAIL cannot find the op-tee load address or the reserved-memory carve-out'; fail=1
-elif [ $(( fit_load )) != $(( tee_base )) ]; then
-	echo "  FAIL the FIT loads OP-TEE at $fit_load, the kernel reserves $tee_base"; fail=1
+if grep -q 'CONFIG_SPL_OPTEE_IMAGE=y' "$ubt/configs/$UBOOT_DEFCONFIG" ||
+   grep -Eqi 'op-tee|optee' "$TOP/Makefile" "$TOP"/scripts/build-*.sh ||
+   grep -R -Eqi --include='*.env' --include='*.config' --include='*.dts*' \
+		'op-tee|optee' "$BOARD_DIR"; then
+	echo '  FAIL OP-TEE is still referenced by the board build'; fail=1
 else
-	echo "  ok   OP-TEE loads at $tee_base and the kernel reserves it"
-fi
-if [ -n "$tee_base" ]; then
-	bad_addr=0
-	while read -r var addr; do
-		if [ $(( addr >= tee_base && addr < tee_base + tee_size )) -eq 1 ]; then
-			echo "  FAIL $var=$addr is inside the OP-TEE window [$tee_base, +$tee_size)"; bad_addr=1
-		fi
-	done < <(sed -nE 's/^(kernel_addr_r|fdt_addr_r|ramdisk_addr_r|scriptaddr|pxefile_addr_r)=(0x[0-9a-fA-F]+)$/\1 \2/p' "$pico_env")
-	[ "$bad_addr" -eq 0 ] && echo '  ok   the U-Boot staging addresses stay clear of the OP-TEE window'
-	fail=$(( fail | bad_addr ))
+	echo '  ok   boot chain and board configuration contain no OP-TEE'
 fi
 
 log "source patches"
@@ -125,7 +103,8 @@ log "kernel config fragments"
 frag_syms() {
 	sed -nE 's/^CONFIG_([A-Z0-9_]+)=.*$/\1/p; s/^# CONFIG_([A-Z0-9_]+) is not set$/\1/p' "$@"
 }
-frags=("$BOARD_DIR"/kernel/config/*.config)
+config_dir="${KERNEL_CONFIG_DIR:-$BOARD_DIR/kernel/config}"
+frags=("$config_dir"/*.config)
 dupes="$(frag_syms "${frags[@]}" | sort | uniq -d)"
 if [ -n "$dupes" ]; then
 	echo "  FAIL a symbol is set in more than one place; the last fragment wins:"
@@ -133,12 +112,10 @@ if [ -n "$dupes" ]; then
 else
 	echo "  ok   $(frag_syms "${frags[@]}" | wc -l) symbols across ${#frags[@]} fragments, no duplicates"
 fi
-# DRM would flip the RKNPU memory-manager choice away from the dma-heap path
-# that librknnmrt expects, and the RV1106 has no display engine anyway.
-if grep -qE '^CONFIG_DRM=y' "${frags[@]}"; then
-	echo '  FAIL fragment enables DRM, which switches RKNPU to the DRM GEM backend'; fail=1
+if grep -q '^# CONFIG_ROCKCHIP_RKNPU is not set$' "${frags[@]}"; then
+	echo '  ok   accelerator driver is explicitly disabled'
 else
-	echo '  ok   DRM stays off, RKNPU keeps the dma-heap backend'
+	echo '  FAIL kernel fragment does not disable the accelerator driver'; fail=1
 fi
 
 log "rootfs overlay"
@@ -161,17 +138,19 @@ else
 	echo '  FAIL /etc/locale.conf does not set LANG; pam_env will log on every login'; fail=1
 fi
 
-log "npu glibc shim"
-if command -v "${CROSS_COMPILE}gcc" >/dev/null 2>&1; then
-	tmp="$(mktemp -d)"
-	if "${CROSS_COMPILE}gcc" -O2 -fPIC -Wall -Werror -c "$TOP/npu/uclibc-ctype-compat.c" -o "$tmp/o.o" 2>"$tmp/err"; then
-		echo '  ok   uclibc-ctype-compat.c compiles clean'
-	else
-		echo '  FAIL uclibc-ctype-compat.c'; sed 's/^/       /' "$tmp/err"; fail=1
-	fi
-	rm -rf "$tmp"
+log "USB RNDIS access"
+if grep -q 'functions/rndis.usb0' "$ovl/usr/local/sbin/luckfox-usb-gadget" &&
+   grep -q '^CONFIG_USB_CONFIGFS_RNDIS=y$' "${frags[@]}" &&
+   grep -q 'enable_unit ssh.service' "$TOP/rootfs/hooks/customize.sh"; then
+	echo '  ok   RNDIS gadget receives an address and SSH is enabled'
 else
-	warn "no ${CROSS_COMPILE}gcc, skipping the shim compile"
+	echo '  FAIL RNDIS and SSH are not both configured'; fail=1
+fi
+
+if grep -q '^LABEL=LUCKFOX-DATA /mnt/sdcard' "$ovl/etc/fstab"; then
+	echo '  ok   NAND-root release mounts labelled FAT32 user storage'
+else
+	echo '  FAIL FAT32 user-storage mount is missing'; fail=1
 fi
 
 [ "$fail" -eq 0 ] || die "checks failed"
