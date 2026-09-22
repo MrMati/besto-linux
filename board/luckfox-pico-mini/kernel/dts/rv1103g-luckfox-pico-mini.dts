@@ -1,0 +1,114 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/* Luckfox Pico Mini: RV1103, 64MB DDR3L, W25N01KVZEIR 128MB SPI NAND. */
+
+/dts-v1/;
+
+#include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/pinctrl/rockchip.h>
+#include "rv1103.dtsi"
+
+/ {
+	model = "Luckfox Pico Mini";
+	compatible = "luckfox,pico-mini", "rockchip,rv1103";
+
+	chosen { bootargs = "console=ttyS2,115200n8 rootwait"; };
+
+	vcc_1v8: regulator-vcc-1v8 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_1v8";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vcc_3v3: regulator-vcc-3v3 {
+		compatible = "regulator-fixed";
+		regulator-name = "vcc_3v3";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	vdd_arm: regulator-vdd-arm {
+		compatible = "regulator-fixed";
+		regulator-name = "vdd_arm";
+		regulator-min-microvolt = <900000>;
+		regulator-max-microvolt = <900000>;
+		regulator-always-on;
+		regulator-boot-on;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		work_led: led-0 {
+			gpios = <&gpio3 RK_PC6 GPIO_ACTIVE_HIGH>;
+			linux,default-trigger = "heartbeat";
+			default-state = "on";
+			function = "activity";
+		};
+	};
+};
+
+&cpu0 { cpu-supply = <&vdd_arm>; #cooling-cells = <2>; };
+
+/* Fixed VDD_ARM cannot participate in PVTPLL voltage calibration. */
+&cpu0_opp_table {
+	/delete-property/ rockchip,pvtpll-avg-offset;
+	/delete-property/ rockchip,pvtpll-min-rate;
+	/delete-property/ rockchip,pvtpll-volt-step;
+};
+
+&sfc {
+	status = "okay";
+	flash@0 {
+		compatible = "spi-nand";
+		reg = <0>;
+		spi-max-frequency = <75000000>;
+		spi-rx-bus-width = <4>;
+		spi-tx-bus-width = <1>;
+
+		partitions {
+			compatible = "fixed-partitions";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			partition@0 { label = "env"; reg = <0x00000000 0x00040000>; };
+			partition@40000 { label = "idblock"; reg = <0x00040000 0x00100000>; read-only; };
+			partition@140000 { label = "uboot"; reg = <0x00140000 0x00100000>; read-only; };
+			partition@240000 { label = "boot"; reg = <0x00240000 0x00800000>; };
+			partition@a40000 { label = "ubi"; reg = <0x00a40000 0x075c0000>; };
+		};
+	};
+};
+
+&sdmmc {
+	bus-width = <4>;
+	cap-mmc-highspeed;
+	cap-sd-highspeed;
+	disable-wp;
+	no-mmc;
+	no-sdio;
+	/*
+	 * The slot has no card-detect wire: the vendor DTS keeps the det pad
+	 * muxed but forces the controller to always assume a card. Left to the
+	 * floating pad, the driver reports "no card" and the board never boots
+	 * from the one storage the development path depends on.
+	 */
+	non-removable;
+	max-frequency = <50000000>;
+	pinctrl-names = "default";
+	pinctrl-0 = <&sdmmc0_clk &sdmmc0_cmd &sdmmc0_det &sdmmc0_bus4>;
+	status = "okay";
+};
+
+&u2phy { status = "okay"; };
+&u2phy_otg { rockchip,dis-u2-susphy; status = "okay"; };
+&usbdrd { status = "okay"; };
+&usbdrd_dwc3 { dr_mode = "peripheral"; status = "okay"; };
+&saradc { vref-supply = <&vcc_1v8>; status = "okay"; };
+&tsadc { status = "okay"; };
+&rng { status = "okay"; };
+&uart2 { status = "okay"; };
+&wdt { status = "okay"; };
+&rtc { status = "okay"; };

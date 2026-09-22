@@ -1,285 +1,83 @@
 # luckfox-linux
 
-A modern **glibc** Linux system for the **Luckfox Pico Max** (Rockchip RV1106G3),
-built from pinned upstreams by a handful of shell scripts. Debian userspace,
-Rockchip 6.6 kernel, mainline U-Boot, and a working NPU. All multimedia functionality 
-is explicitly omitted.
+A small, reproducible Debian `armhf` system for Luckfox Pico boards. It uses
+Rockchip's 6.6 kernel and the in-review RV110x U-Boot support, with no OP-TEE
+and no NPU runtime or driver.
 
-```
-make deps      # once, on a Debian/Ubuntu host
-make           # -> out/luckfox-pico-max-sdcard.img
-```
+Supported boards:
 
-## What you get
-
-|                | |
-|----------------|---|
-| **libc**       | glibc, via Debian trixie `armhf` |
-| **init**       | systemd, with networkd/resolved/timesyncd wired up |
-| **kernel**     | Rockchip `develop-6.6` + a devicetree and config written for this board |
-| **bootloader** | Mainline U-Boot with standard boot (`extlinux.conf`), not the 2017.09 vendor fork |
-| **secure world** | Upstream OP-TEE as the secure monitor, built from source; `/dev/tee0` and `tee-supplicant` ready |
-| **NPU**        | `rknpu` built into the kernel, plus a **glibc-adapted `librknnmrt.so.2`** |
-| **memory**     | zram swap, tuned sysctls: a full systemd userspace idles around 45 MB of the 256 MB |
-| **cpufreq**    | `ondemand` over 408 MHz - 1.2 GHz, throttling to a cooling device at 85 C |
-| **storage**    | ext4 on microSD (grows to fill the card on first boot), or UBIFS in the 237 MB SPI NAND |
-| **access**     | serial on UART2, DHCP on Ethernet, and USB-C gadget (NCM network + ACM console) |
-
-Package management works. `apt install` works. `rustup` works. `pip install`
-works. That is the whole point.
-
-## Status
-
-Kernel boots cleanly, userspace starts green, NPU inference works right away.
-
-## Why these pieces
-
-Getting a Pico Max to a good place means making three choices, and the obvious
-answer is wrong for two of them.
-
-**Kernel: Rockchip `develop-6.6`.** Mainline Linux has no RV1106 support
-whatsoever, and the ongoing mainlining effort ([meta-rv110x] has 14 patches for
-clk/pinctrl/OTP/GMAC/USB-PHY, [rockchip-rv1106-dev] boots 6.18 to a shell) does
-not include the NPU and is not close to it.
-Rockchip's own `develop-6.6` branch is the sweet spot nobody seems to use: it
-has full RV1106 SoC support *and* `drivers/rknpu` with a `rockchip,rv1106-rknpu`
-match.
-
-**Bootloader: mainline U-Boot.** RV1106 support currently only resides in 
-[Concept U-Boot](https://concept.deinde.dev/u-boot/u-boot). It is a normal 
-modern U-Boot: binman, `ROCKCHIP_TPL` for the rkbin DDR blob, standard boot, 
-builds with a current GCC. This repo pins that branch and adds the Pico Max on top:
-a devicetree, a defconfig, a boot environment and a `LUCKFOX_PICO_DRAM_SIZE_MB`
-Kconfig.
-
-**Rootfs: Debian, not Buildroot or Yocto.** [luckfox-yocto] and
-[meta-luckfox-pico] are good work, and if you want a 30 MB read-only appliance
-image you should use them. This repo is for the other case: you have 256 MB of
-RAM and a 32 GB card, and you want a machine, not an appliance. Debian armhf
-gives you that for a ~250 MB rootfs.
-
-[meta-rv110x]: https://github.com/RamasyaR/meta-rv110x
-[rockchip-rv1106-dev]: https://github.com/gflix/rockchip-rv1106-dev
-[luckfox-yocto]: https://github.com/RamasyaR/luckfox-yocto
-[meta-luckfox-pico]: https://github.com/Maobuff/meta-luckfox-pico
-[uboot-mr]: https://concept.u-boot.org/u-boot/u-boot/-/merge_requests/1147
-
-## The NPU
-
-Rockchip publishes the RV1103/RV1106 runtime (`librknnmrt`) as a **uClibc build
-only** — there is no glibc shared object anywhere in `rknn-toolkit2`. On a glibc
-rootfs the vendor `.so` is unloadable, so every glibc project on this SoC ends up
-statically linking `librknnmrt.a` and carrying its own compat shim.
-
-It turns out that archive is almost libc-agnostic. Out of everything it imports,
-exactly two symbols are uClibc-private: `__ctype_b` and `__ctype_tolower`.
-uClibc-ng reuses glibc's bit layout for both, so they can be rebuilt at load
-time from glibc's own locale tables ([`npu/uclibc-ctype-compat.c`]).
-So this repo does it once, properly, and ships a real library.
-
-`/dev/rknpu` is owned by the `render` group, so inference does not need root.
-`rknpu-info` on the board prints the driver version, NPU clock, load, SoC
-temperature and which runtime is installed.
-
-The runtime's weights and feature maps come out of Rockchip's own dma-heap, and
-the kernel parameter that sizes it is **`rk_dma_heap_cma=`**. 
-`RK_DMA_HEAP_SIZE` in `board.env` sets it, and 32 MB is the default here
-as well as the driver's. `rv1106_defconfig` also means the heap is
-carved out of the 256 MB rather than lent to the page allocator, so raising it
-is a straight trade against userspace memory: 32 MB leaves ~220 MB, 64 MB leaves
-~188 MB.
-
-The NPU runs at **594 MHz**, up from the 500 MHz the clock tree comes up on.
-That lives in its own devicetree fragment, `kernel/dts/*-npu-594mhz.dtsi`;
-comment its `#include` out of the board dts for 500 MHz. The rate does not
-actually belong to the NPU node (its ACLK is a gate on a mux with no divider,
-so the NPU is simply whatever `clk_500m_src` is, and 594 MHz is GPLL/2), which
-is what the fragment is there to explain.
-
-## Secure world (OP-TEE)
-
-The image boots with a real secure world: **upstream OP-TEE**, built from
-source, no `rv1106_tee_ta` blob from rkbin. The RV1106 port landed in
-`plat-rockchip` upstream (the pinned commit is that very change), so the whole
-thing is one plain `make PLATFORM=rockchip-rv1106`.
-
-The boot chain becomes: BootROM loads `idbloader.img` (rkbin DDR init + SPL);
-the SPL loads `u-boot.img`, which is now binman's `u-boot.itb`, a FIT holding
-OP-TEE and U-Boot proper; the SPL enters OP-TEE, which sets up the secure
-world and returns to U-Boot in the normal world; U-Boot then boots Linux via
-`extlinux.conf` as before. This is mainline U-Boot's stock
-`CONFIG_SPL_OPTEE_IMAGE` flow, the same one the RK3229/RK3288 use, with two
-board-side adjustments:
-
-- the FIT's op-tee load address is moved from the vendor blob's `0x08400000`
-  to `0x03d00000`, where upstream OP-TEE links (`CFG_TZDRAM_START`, matching
-  the vendor firmware layout);
-- OP-TEE is built with `CFG_DT_ADDR` unset, so it takes the control DTB
-  address the mainline SPL hands it in `r2` instead of the fixed address the
-  vendor SPL flow needs.
-
-The memory window `[0x03d00000, 0x04e00000)` -- 16 MB TZDRAM + 1 MB static
-shared memory -- is reserved `no-map` in the kernel devicetree, and U-Boot's
-staging addresses keep clear of it. `make check` holds all of those numbers
-together.
-
-On the Linux side `CONFIG_OPTEE` gives `/dev/tee0` (clients) and
-`/dev/teepriv0` (supplicant); the standard rootfs profile ships Debian's
-`tee-supplicant` and `libteec2`, so the userspace half is ready the moment a
-TA needs it. The kernel's `psci { method = "smc" }` calls, which previously
-had no monitor to land in, are answered by OP-TEE's ARM32 PSCI backend.
-
-### Trying it out
-
-The standard rootfs ships the upstream OP-TEE examples, built by
-`make optee-examples` from the pinned `optee_examples` against this tree's TA
-dev kit: the host apps land in `/usr/bin/optee_example_*` and the signed TAs
-in `/lib/optee_armtz/`, which is where Debian's `tee-supplicant` loads them
-from. End to end, on the board:
-
-```
-# optee_example_hello_world     # session + invoke: prints 42, then 43
-# optee_example_random          # entropy from the secure world
-# optee_example_secure_storage  # TEE storage, round-trips through
-                                # tee-supplicant's REE FS RPC to /var/lib/tee
-```
-
-`optee_example_aes`, `optee_example_acipher <keysize> <string>` and
-`optee_example_hotp` exercise crypto inside a TA. The first invocation of
-each example is when its TA gets loaded (supplicant fetch, signature check),
-so expect a beat of latency and a burst of secure-console traces.
-
-OP-TEE is a **debug build**: `CFG_TEE_CORE_DEBUG=y` (assertions, lock checks,
-verbose aborts) with core and TA trace levels at 3 (error+info+debug), so the
-secure console on ttyS2 narrates session setup and TA loading as the examples
-run. Level 4 would add flow tracing on every SMC and drown the 115200
-console. For a release build turn both levels back to 1 in
-`scripts/build-optee.sh`.
-
-One consequence to know about: a kernel from this tree expects to run in the
-normal world. Boot it with a pre-OP-TEE `u-boot.img` and the PSCI probe's SMC
-has no monitor to catch it; reflash both halves together.
-
-## CPU frequency, and why it stops at 1.2 GHz
-
-The RV1106 is a 1.6 GHz part and `rv1106.dtsi` has the OPPs to prove it, but
-those top bins need up to 1.0 V on VDD_ARM. Rockchip's reference design gets
-that from a PWM-controlled buck. Luckfox left the buck off the Pico Max and
-fitted a fixed 0.9 V rail, so **1.2 GHz is the fastest OPP this board can hold**:
-it is the last one specified at 850 mV. The devicetree deletes the four above
-it, because nothing else would: the fallback leg of
-`regulator_set_voltage_triplet()` asks for the OPP's *minimum* voltage, which is
-850 mV for every entry in the table, so a fixed 0.9 V rail "satisfies" 1.6 GHz
-just as readily as it satisfies 408 MHz. The OPP table is the only thing
-standing between the part and an undervolted 1.6 GHz.
-
-Two more things follow from the fixed rail. PVTPLL calibration is deleted with
-the OPPs: it exists to search for the lowest stable voltage per frequency, and
-there is nothing here to search. And DVFS is frequency-only, so the power
-savings are the dynamic ones and nothing else.
-
-Getting this far mostly needed `CONFIG_ROCKCHIP_OPP`. `rockchip-cpufreq` calls
-`rockchip_init_opp_info()` before it will register the `cpufreq-dt` device, and
-without that symbol it is a stub returning `-EOPNOTSUPP`. Nothing selects it,
-and `rv1106_defconfig` does not set it, so the driver failed at probe and the
-board had no `cpufreq` directory at all.
+| Board | SoC / RAM | NAND |
+|---|---|---|
+| `luckfox-pico-max` (default) | RV1106G3 / 256 MiB | 256 MiB SPI NAND |
+| `luckfox-pico-mini` | RV1103 / 64 MiB | 128 MiB W25N01KVZEIR SPI NAND |
 
 ## Build
 
-Any Debian or Ubuntu host. Roughly 25 GB of disk and 20 minutes on 16 cores.
+Use the Mini's default minimal profile unless its NAND budget has been
+reviewed for a larger profile.
 
-```bash
-make deps                        # apt-get the toolchain, mmdebstrap, image tools
-make check                       # seconds; run this before you push
-make                             # uboot + kernel + npu + rootfs + images
-make info                        # what is pinned, what is built
+```sh
+make deps
+make check
+make                                      # Pico Max
+BOARD=luckfox-pico-mini make              # Pico Mini
 ```
 
-Individual stages: `make optee`, `make optee-examples`, `make uboot`,
-`make kernel`, `make npu`, `make rootfs`, `make images`. Knobs, all
-overridable from the environment:
+Each build produces two installation paths:
 
-```bash
-ROOTFS_PROFILE=dev make          # minimal | standard | dev (adds a native toolchain)
-ROOTFS_SUITE=bookworm make       # if you want the older glibc
-ROOTFS_ROOT_PASSWORD= make       # empty -> root stays locked, SSH keys only
-JOBS=32 make
-```
+- `out/<board>-sdcard.img`: development image. It boots Linux from ext4 on
+  microSD and expands the root filesystem on first boot.
+- `out/<board>-rootfs.ubi`, `idbloader.img`, and `u-boot.img`: release image.
+  Flash these to SPI NAND and the whole system, including `/boot`, runs from
+  UBIFS in NAND.
+
+The Mini uses the official W25N01KV layout: 256 KiB environment, 1 MiB
+idblock, 1 MiB U-Boot, 8 MiB boot partition, and the remainder as UBI. The
+W25N01xx-aware Rockchip USB loader is selected for flashing it.
 
 ## Flash
 
-RV1106's Bootrom can boot from NAND and MMC.
+For development, write the SD image to a card. A board with bootable NAND is
+preferred by the BootROM, so erase/leave NAND blank while iterating on the SD
+boot path.
 
-### NAND U-Boot + SD card system
-
-```bash
-# 1. board into maskrom mode: hold BOOT while applying power (USB 2207:110c)
-scripts/flash.sh nand            # write idbloader + u-boot into the NAND
-
-# 2. the system itself
-scripts/flash.sh sd /dev/sdX     # asks for confirmation
+```sh
+scripts/flash.sh sd /dev/sdX
 ```
 
-### SD card only
+For a release, put the board in maskrom mode and write its boot chain and UBI
+root filesystem:
 
-```bash
-scripts/flash.sh sd /dev/sdX     # asks for confirmation
+```sh
+scripts/flash.sh nand --with-rootfs
 ```
 
-Once running our U-Boot. Maskrom mode can be entered with:
-```bash
-run maskrom
+After booting the NAND release, prepare any user microSD card as one FAT32
+filesystem labelled `LUCKFOX-DATA`. It is mounted automatically at
+`/mnt/sdcard`; the development SD-root image does not carry that label, so it
+is not mounted over its own root filesystem.
+
+```sh
+mkfs.fat -F 32 -n LUCKFOX-DATA /dev/sdX1
 ```
 
-To run entirely out of the NAND instead, `scripts/flash.sh nand --with-rootfs`
-writes the UBI image too; U-Boot falls back to it when no card has a bootflow.
+## Access over USB
 
-First boot: console on **UART2, 115200 8N1**, root password `luckfox`, 
-Ethernet via DHCP, and `172.32.0.93` over the USB-C gadget. The card is
-handed over read-only so `systemd-fsck-root` gets to run, then remounted `rw`
-from `/etc/fstab`; the partition and filesystem grow to fill the card.
+The USB-C peripheral port presents an RNDIS Ethernet device plus an ACM serial
+console. The board assigns `172.32.0.93/24` to `usb0`; configure the host end
+as (for example) `172.32.0.1/24`, then connect with:
 
-The gadget is two functions on the one cable. `ssh root@172.32.0.93` over NCM,
-and a second login prompt on the ACM port, which the host sees as `/dev/ttyACM0`:
-
-```bash
-tio /dev/ttyACM0        # or: screen /dev/ttyACM0, picocom /dev/ttyACM0
+```sh
+ssh root@172.32.0.93
 ```
 
-Board can be addressed by the serial
-the gadget reports, which is the SoC's own and does not change:
+OpenSSH is enabled by default and host keys are generated on first boot. RNDIS
+is advertised with Microsoft OS descriptors so Windows binds its inbox driver;
+Linux can use the same USB Ethernet link.
 
-```bash
-tio /dev/serial/by-id/usb-Luckfox_Pico_Max_556abe2b7497589c-if02
-```
+## CI and cache
 
-Debian's desktop-sized housekeeping is masked, not deleted: `apt-daily`,
-`apt-daily-upgrade`, `e2scrub`, `fstrim` and `dpkg-db-backup` do not run on
-their own. `systemctl unmask` whichever you want back.
-
-## Layout
-
-```
-board/luckfox-pico-max/
-  board.env                    every board-specific number, in one file
-  kernel/dts/                  rv1106g3-luckfox-pico-max.dts, plus the
-                               optional fragments it #includes
-  kernel/config/               the fragment merged over rv1106_defconfig
-  kernel/patches/              the few fixes that touch files we do not own
-  uboot/tree/                  files copied verbatim into the U-Boot checkout
-  uboot/patches/               the few fixes that touch files we do not own
-rootfs/
-  packages/                    minimal / standard / dev
-  overlay/                     everything shipped into /
-  hooks/customize.sh           runs on the host against the rootfs, no chroot
-npu/                           the glibc shim and rknpu-info
-scripts/                       one script per stage; lib.sh holds the pins
-```
-
-Upstreams are pinned to exact commits in `scripts/lib.sh`. Nothing floats.
-
-## Credits
-
-The RV1106 U-Boot work is Fabio Estevam's and Simon Glass's [!1147][uboot-mr]. 
-The Pico Max devicetree started from Luckfox's SDK by way of [meta-luckfox-pico]. 
-[meta-rv110x] is the reference for what mainlining this SoC actually takes.
+The workflow separates checks, U-Boot, kernel, and rootfs/image construction.
+It caches source trees per component and the expensive mmdebstrap base rootfs;
+cache keys include the pinned source references and rootfs package lists. Run
+it locally with `act` rather than compiling directly on the workstation.

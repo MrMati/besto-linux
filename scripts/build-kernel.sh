@@ -51,8 +51,9 @@ fi
 log "configuring kernel ($KERNEL_DEFCONFIG + glibc-distro fragment)"
 kmake "$KERNEL_DEFCONFIG" >/dev/null
 
+config_dir="${KERNEL_CONFIG_DIR:-$BOARD_DIR/kernel/config}"
 ARCH=arm "$k/scripts/kconfig/merge_config.sh" -m -O "$kb" \
-	"$kb/.config" "$BOARD_DIR"/kernel/config/*.config >/dev/null
+	"$kb/.config" "$config_dir"/*.config >/dev/null
 kmake olddefconfig >/dev/null
 
 # merge_config.sh is advisory: it warns about symbols that did not take rather
@@ -78,7 +79,7 @@ while read -r sym want; do
 		fail=1
 	fi
 done < <(sed -nE 's/^CONFIG_([A-Za-z0-9_]+)=(.*)$/\1 \2/p; s/^# CONFIG_([A-Za-z0-9_]+) is not set$/\1 n/p' \
-	"$BOARD_DIR"/kernel/config/*.config)
+	"$config_dir"/*.config)
 [ "$fail" -eq 0 ] || die "kernel configuration did not come out as intended"
 
 # --- build ------------------------------------------------------------------

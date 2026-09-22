@@ -1,0 +1,27 @@
+// SPDX-License-Identifier: GPL-2.0+
+
+#include "rockchip-u-boot.dtsi"
+
+/ {
+	chosen {
+		/* Use SD during development; installed NAND remains first for release. */
+		u-boot,spl-boot-order = &spi_nand, &sdmmc;
+	};
+};
+
+&cru { bootph-all; };
+&grf { bootph-all; };
+&sdmmc { bootph-pre-ram; bootph-some-ram; };
+&pinctrl { bootph-all; };
+&ioc { bootph-all; };
+&pmuioc { bootph-all; };
+&uart2m1_xfer { bootph-all; };
+&fspi_pins { bootph-pre-ram; bootph-some-ram; };
+&fspi_cs0 { bootph-pre-ram; bootph-some-ram; };
+&sdmmc0_bus4 { bootph-pre-ram; bootph-some-ram; };
+&sdmmc0_clk { bootph-pre-ram; bootph-some-ram; };
+&sdmmc0_cmd { bootph-pre-ram; bootph-some-ram; };
+&sdmmc0_det { bootph-pre-ram; bootph-some-ram; };
+&pcfg_pull_none { bootph-all; };
+&pcfg_pull_up { bootph-all; };
+&pcfg_pull_up_drv_level_2 { bootph-all; };

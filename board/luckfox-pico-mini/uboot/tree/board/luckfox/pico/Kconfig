@@ -1,0 +1,19 @@
+if TARGET_LUCKFOX_PICO_RV1103 || TARGET_LUCKFOX_PICO_RV1106
+
+config SYS_BOARD
+	default "pico"
+
+config SYS_VENDOR
+	default "luckfox"
+
+config SYS_CONFIG_NAME
+	default "luckfox_pico"
+
+config LUCKFOX_PICO_DRAM_SIZE_MB
+	int "Size of the in-package DRAM, in MB"
+	default 64
+	help
+	  The closed-source TPL initializes RV1103/RV1106 DRAM before U-Boot runs.
+	  Its size is board-specific and is not reliably discoverable by U-Boot.
+
+endif
