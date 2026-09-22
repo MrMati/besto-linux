@@ -18,6 +18,51 @@ if [ "$(hostarch_deb)" != "$ROOTFS_ARCH" ]; then
 		|| die "cross-building $ROOTFS_ARCH needs qemu-user (and binfmt-support)"
 fi
 
+# --- foreign-arch chroot emulation ------------------------------------------
+#
+# binfmt_misc resolves the registered emulator against the root of whoever
+# execs the armhf binary -- once mmdebstrap has chrooted, that root is the
+# fresh rootfs, not the build host. The F flag ("fix binary") would pre-open
+# the emulator at registration time and make it survive the chroot, but
+# Debian and Ubuntu ship their entries without it (flags OP), and mmdebstrap
+# 1.4 stopped copying qemu-$arch-static into the chroot -- Ubuntu 24.04 still
+# carries 1.4.3. Every armhf exec inside the chroot then dies with a
+# misleading "No such file or directory".
+#
+# So do what mmdebstrap used to do: a setup hook copies the emulator into the
+# chroot at the exact path the entry names, preferring the static build so
+# the chroot needs no dynamic loader beyond its own.
+qemu_cross_setup() {
+	case "$ROOTFS_ARCH" in
+	armhf) qemu_name=qemu-arm ;;
+	*) die "no qemu mapping for $ROOTFS_ARCH" ;;
+	esac
+	entry="/proc/sys/fs/binfmt_misc/$qemu_name"
+	[ -e "$entry" ] || die "no $qemu_name binfmt_misc entry; install qemu-user-static"
+	reg_interp="$(sed -n 's/^interpreter //p' "$entry")"
+	[ -n "$reg_interp" ] || die "$entry does not name an interpreter"
+	# The static build is preferred: it runs without a loader, so the chroot
+	# needs nothing besides the copy itself.
+	if [ -x "/usr/bin/$qemu_name-static" ]; then
+		src="/usr/bin/$qemu_name-static"
+	else
+		src="$(readlink -f "$reg_interp")"
+		[ -x "$src" ] || die "$entry points at $reg_interp, which does not resolve to an executable"
+	fi
+	# A dynamic interpreter needs its ELF interpreter copied in as well, or
+	# the very first chrooted exec dies with ENOENT.
+	ldso="$(readelf -l "$src" 2>/dev/null | awk '/Requesting program interpreter/ {print $NF; exit}')"
+	qemu_hook="set -e; mkdir -p \"\$1$(dirname "$reg_interp")\"; cp -f $src \"\$1$reg_interp\""
+	if [ -n "$ldso" ]; then
+		qemu_hook="$qemu_hook; mkdir -p \"\$1$(dirname "$ldso")\"; cp -f $ldso \"\$1$ldso\""
+	fi
+}
+qemu_hook=""
+if [ "$(hostarch_deb)" != "$ROOTFS_ARCH" ]; then
+	qemu_cross_setup
+	log "qemu-in-chroot: $reg_interp <- $src"
+fi
+
 kver="$(cat "$OUT/kernel.release" 2>/dev/null || true)"
 [ -n "$kver" ] || die "build the kernel first (make kernel): no $OUT/kernel.release"
 
@@ -191,6 +236,14 @@ else
 	# Expect that taint on every boot until Debian finishes the transition.
 	usrmerge=/usr/share/mmdebstrap/hooks/merged-usr
 	[ -d "$usrmerge" ] || die "mmdebstrap has no merged-usr hook at $usrmerge"
+	# The qemu hook must run first: it puts the foreign-arch emulator where
+	# the kernel's binfmt entry looks for it, which is inside this chroot
+	# (see the comment above qemu_cross_setup). Without it the very first
+	# armhf exec in the chroot fails with ENOENT.
+	mmargs=()
+	if [ -n "$qemu_hook" ]; then
+		mmargs+=(--setup-hook="$qemu_hook")
+	fi
 	# --format is explicit because the output name has to be a temporary one:
 	# mmdebstrap picks directory vs tar from the extension, and a half-written
 	# .tar left behind by a cancelled job would be indistinguishable from a
@@ -202,6 +255,7 @@ else
 		--components="$ROOTFS_COMPONENTS" \
 		--hook-dir="$usrmerge" \
 		--hook-dir=/usr/share/mmdebstrap/hooks/eatmydata \
+		"${mmargs[@]}" \
 		--format=tar \
 		"$ROOTFS_SUITE" "$base.part" "$ROOTFS_MIRROR"
 	mv "$base.part" "$base"
